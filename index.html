@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plná moc na převod vozidla</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="bg-orb orb-a"></div>
+  <div class="bg-orb orb-b"></div>
+
+  <main class="layout">
+    <header class="hero">
+      <p class="eyebrow">Převod vozidla</p>
+      <h1>Plná moc</h1>
+      <p class="lead">Vyplňte jen potřebné údaje. Zbytek lze automaticky načíst z ARES podle IČO nebo názvu.</p>
+    </header>
+
+    <form id="powerForm" class="form-grid" autocomplete="on">
+      <section class="card">
+        <h2>Zmocnitel</h2>
+        <div class="field">
+          <label for="grantorLookup">Vyhledat v ARES (IČO nebo název)</label>
+          <input id="grantorLookup" type="text" placeholder="Např. 06002293 nebo EMPrace">
+          <div id="grantorSuggestions" class="suggestions" aria-live="polite"></div>
+        </div>
+
+        <div class="grid-two">
+          <div class="field">
+            <label for="grantorIco">IČO</label>
+            <input id="grantorIco" type="text" inputmode="numeric" maxlength="8" pattern="\d{8}" placeholder="8 číslic">
+          </div>
+          <div class="field">
+            <label for="grantorId">IČ/RČ</label>
+            <input id="grantorId" type="text" placeholder="IČO, RČ nebo datum narození">
+          </div>
+          <div class="field span-2">
+            <label for="grantorName">Název / jméno</label>
+            <input id="grantorName" type="text" required>
+          </div>
+          <div class="field span-2">
+            <label for="grantorAddress">Sídlo / bydliště</label>
+            <textarea id="grantorAddress" rows="2" required></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Zmocněnec</h2>
+        <div class="field">
+          <label for="attorneyLookup">Vyhledat v ARES (IČO nebo název)</label>
+          <input id="attorneyLookup" type="text" placeholder="Např. 06568513 nebo Arev Group">
+          <div id="attorneySuggestions" class="suggestions" aria-live="polite"></div>
+        </div>
+
+        <div class="grid-two">
+          <div class="field">
+            <label for="attorneyIco">IČO</label>
+            <input id="attorneyIco" type="text" inputmode="numeric" maxlength="8" pattern="\d{8}" placeholder="8 číslic">
+          </div>
+          <div class="field">
+            <label for="attorneyId">IČ/RČ</label>
+            <input id="attorneyId" type="text" placeholder="IČO, RČ nebo datum narození">
+          </div>
+          <div class="field span-2">
+            <label for="attorneyName">Název / jméno</label>
+            <input id="attorneyName" type="text" required>
+          </div>
+          <div class="field span-2">
+            <label for="attorneyAddress">Sídlo / bydliště</label>
+            <textarea id="attorneyAddress" rows="2" required></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Vozidlo</h2>
+        <div class="grid-two">
+          <div class="field">
+            <label for="vehicleBrand">Značka</label>
+            <input id="vehicleBrand" type="text" required>
+          </div>
+          <div class="field">
+            <label for="vehicleModel">Model</label>
+            <input id="vehicleModel" type="text" required>
+          </div>
+          <div class="field">
+            <label for="vehicleSpz">SPZ/RZ (nepovinné)</label>
+            <input id="vehicleSpz" type="text" maxlength="10" placeholder="Např. 1AB2345">
+          </div>
+          <div class="field">
+            <label for="vehicleVin">VIN</label>
+            <input id="vehicleVin" type="text" maxlength="17" pattern="[A-HJ-NPR-Z0-9]{17}" required>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Rozsah zplnomocnění</h2>
+        <p class="hint">Vyberte alespoň jeden úkon.</p>
+        <div class="checklist">
+          <label><input type="checkbox" name="actions" value="přihlašováním a převody vozidel,"> Přihlašováním a převody vozidel</label>
+          <label><input type="checkbox" name="actions" value="zápisem změn vlastníka a provozovatele do registru vozidel,"> Zápisem změn vlastníka a provozovatele do registru vozidel</label>
+          <label><input type="checkbox" name="actions" value="zajištěním vydání nových registračních značek v případě jejich ztráty, odcizení nebo poškození,"> Zajištěním vydání nových registračních značek v případě jejich ztráty, odcizení nebo poškození</label>
+          <label><input type="checkbox" name="actions" value="vyřazením vozidla z evidence,"> Vyřazením vozidla z evidence</label>
+          <label><input type="checkbox" name="actions" value="zajištěním vydání duplikátů dokladů k vozidlu v případě jejich ztráty, odcizení nebo poškození,"> Zajištěním vydání duplikátů dokladů k vozidlu v případě jejich ztráty, odcizení nebo poškození</label>
+          <label><input type="checkbox" name="actions" value="zajištěním administrativních úkonů souvisejících s vývozem vozidla do zahraničí,"> Zajištěním administrativních úkonů souvisejících s vývozem vozidla do zahraničí</label>
+          <label><input type="checkbox" name="actions" value="prováděním dalších úkonů souvisejících s registrem silničních vozidel podle zákona č. 56/2001 Sb., o podmínkách provozu vozidel na pozemních komunikacích, ve znění pozdějších předpisů."> Prováděním dalších úkonů souvisejících s registrem silničních vozidel podle zákona č. 56/2001 Sb., o podmínkách provozu vozidel na pozemních komunikacích, ve znění pozdějších předpisů</label>
+        </div>
+        <p id="actionsError" class="error" aria-live="polite"></p>
+      </section>
+
+      <section class="card">
+        <h2>Místo a datum</h2>
+        <div class="grid-two">
+          <div class="field">
+            <label for="signPlace">Místo podpisu</label>
+            <input id="signPlace" type="text" value="Praha" required>
+          </div>
+          <div class="field">
+            <label for="signDate">Datum (dd.mm.rrrr)</label>
+            <input id="signDate" type="text" inputmode="numeric" placeholder="17.02.2026" pattern="\d{2}\.\d{2}\.\d{4}" required>
+          </div>
+        </div>
+        <button id="detectPlaceBtn" class="btn btn-ghost" type="button">Použít aktuální lokaci</button>
+      </section>
+
+      <div class="actions">
+        <button id="downloadPdfBtn" class="btn btn-primary" type="button">Stáhnout PDF</button>
+        <p id="formMessage" class="info" aria-live="polite"></p>
+      </div>
+    </form>
+
+    <section class="preview-shell">
+      <h2>Náhled dokumentu</h2>
+      <article id="documentPreview" class="document">
+        <h3>Plná moc</h3>
+
+        <div class="pm-row">
+          <span class="pm-label">Já, níže podepsaný</span>
+          <span id="previewGrantorName" class="pm-value">....................................</span>
+        </div>
+        <div class="pm-row">
+          <span class="pm-label">se sídlem (bytem)</span>
+          <span id="previewGrantorAddress" class="pm-value">....................................</span>
+        </div>
+        <div class="pm-row">
+          <span class="pm-label">IČ/RČ</span>
+          <span id="previewGrantorId" class="pm-value">....................................</span>
+        </div>
+        <p class="pm-note">(dále jako <strong>„zmocnitel“</strong>)</p>
+
+        <p class="pm-verb"><em><u>zmocňuji</u></em></p>
+
+        <div class="pm-row">
+          <span class="pm-label">Společnost/osobu</span>
+          <span id="previewAttorneyName" class="pm-value">....................................</span>
+        </div>
+        <div class="pm-row">
+          <span class="pm-label">se sídlem/bytem</span>
+          <span id="previewAttorneyAddress" class="pm-value">....................................</span>
+        </div>
+        <div class="pm-row">
+          <span class="pm-label">IČ/RČ</span>
+          <span id="previewAttorneyId" class="pm-value">....................................</span>
+        </div>
+        <p class="pm-note">(dále jako <strong>„zmocněnec“</strong>)</p>
+
+        <p class="pm-text">Aby mě v plném rozsahu zastupoval(a) a činil(a) veškeré úkony související s:</p>
+        <ul id="previewActions" class="pm-actions">
+          <li>....................................</li>
+        </ul>
+
+        <div class="pm-row pm-vehicle pm-vehicle-first">
+          <span class="pm-label">Typ a model vozu</span>
+          <span id="previewVehicleTypeModel" class="pm-value">....................................</span>
+        </div>
+        <div id="previewSpzRow" class="pm-row pm-vehicle">
+          <span class="pm-label">SPZ / RZ</span>
+          <span id="previewVehicleSpz" class="pm-value">....................................</span>
+        </div>
+        <div class="pm-row pm-vehicle pm-vehicle-last">
+          <span class="pm-label">Číslo karoserie - VIN</span>
+          <span id="previewVehicleVin" class="pm-value">....................................</span>
+        </div>
+
+        <p class="pm-text pm-bottom">tato plná moc není ve výše uvedeném rozsahu ničím omezena. Zplnomocnění v plném rozsahu zmocněnec přijímá.</p>
+        <p class="pm-signature">
+          <span>V <strong id="previewSignPlace">Praha</strong> dne <strong id="previewSignDate">....................................</strong></span>
+          <span class="pm-sign-right">
+            <span class="pm-sign-line"></span>
+            <span class="pm-sign-role">(zmocnitel)</span>
+          </span>
+        </p>
+      </article>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="assets/fonts/arial-font-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
