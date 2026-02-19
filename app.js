@@ -1,9 +1,12 @@
 const ARES_BASE = "https://ares.gov.cz/ekonomicke-subjekty-v-be/rest";
 
 const form = document.getElementById("powerForm");
+const layout = document.querySelector(".layout");
+const previewShell = document.querySelector(".preview-shell");
 const message = document.getElementById("formMessage");
 const actionsError = document.getElementById("actionsError");
 const downloadPdfBtn = document.getElementById("downloadPdfBtn");
+const togglePreviewBtn = document.getElementById("togglePreviewBtn");
 const ARIAL_REGULAR_URL = "./assets/fonts/arial.ttf";
 const ARIAL_BOLD_URL = "./assets/fonts/arialbd.ttf";
 const ARIAL_ITALIC_URL = "./assets/fonts/ariali.ttf";
@@ -61,9 +64,24 @@ function initialize() {
 
   document.getElementById("detectPlaceBtn").addEventListener("click", () => detectCurrentPlace(false));
   downloadPdfBtn.addEventListener("click", handlePdfDownload);
+  setupPreviewToggle();
   setDefaultActionsChecked();
 
   updatePreview();
+}
+
+function setupPreviewToggle() {
+  if (!togglePreviewBtn || !previewShell || !layout) {
+    return;
+  }
+
+  togglePreviewBtn.addEventListener("click", () => {
+    const isHidden = !previewShell.classList.contains("hidden");
+    previewShell.classList.toggle("hidden", isHidden);
+    layout.classList.toggle("layout-preview-hidden", isHidden);
+    togglePreviewBtn.textContent = isHidden ? "Zobrazit náhled" : "Skrýt náhled";
+    togglePreviewBtn.setAttribute("aria-expanded", String(!isHidden));
+  });
 }
 
 function setDefaultActionsChecked() {
@@ -257,25 +275,25 @@ function formatPostCode(text) {
 }
 
 function updatePreview() {
-  setText("previewGrantorName", valueOrDots(fields.grantorName.value));
-  setText("previewGrantorId", valueOrDots(fields.grantorId.value || fields.grantorIco.value));
-  setText("previewGrantorAddress", valueOrDots(fields.grantorAddress.value));
+  setText("previewGrantorName", valueOrBlank(fields.grantorName.value));
+  setText("previewGrantorId", valueOrBlank(fields.grantorId.value || fields.grantorIco.value));
+  setText("previewGrantorAddress", valueOrBlank(fields.grantorAddress.value));
 
-  setText("previewAttorneyName", valueOrDots(fields.attorneyName.value));
-  setText("previewAttorneyId", valueOrDots(fields.attorneyId.value || fields.attorneyIco.value));
-  setText("previewAttorneyAddress", valueOrDots(fields.attorneyAddress.value));
+  setText("previewAttorneyName", valueOrBlank(fields.attorneyName.value));
+  setText("previewAttorneyId", valueOrBlank(fields.attorneyId.value || fields.attorneyIco.value));
+  setText("previewAttorneyAddress", valueOrBlank(fields.attorneyAddress.value));
 
   const typeModel = [fields.vehicleBrand.value.trim(), fields.vehicleModel.value.trim()].filter(Boolean).join(" ");
-  setText("previewVehicleTypeModel", valueOrDots(typeModel));
+  setText("previewVehicleTypeModel", valueOrBlank(typeModel));
 
   const spz = fields.vehicleSpz.value.trim();
-  setText("previewVehicleSpz", valueOrDots(spz));
+  setText("previewVehicleSpz", valueOrBlank(spz));
   const previewSpzRow = document.getElementById("previewSpzRow");
   if (previewSpzRow) {
     previewSpzRow.style.display = spz ? "grid" : "none";
   }
 
-  setText("previewVehicleVin", valueOrDots(fields.vehicleVin.value));
+  setText("previewVehicleVin", valueOrBlank(fields.vehicleVin.value));
 
   setText("previewSignPlace", valueOrDots(fields.signPlace.value, "Praha"));
   setText("previewSignDate", valueOrDots(fields.signDate.value));
@@ -619,6 +637,10 @@ function setMessage(text, isError = false) {
 function valueOrDots(value, fallback = "....................................") {
   const text = value.trim();
   return text || fallback;
+}
+
+function valueOrBlank(value) {
+  return value.trim();
 }
 
 function setText(id, value) {

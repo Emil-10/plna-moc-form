@@ -51,13 +51,17 @@ body {
 }
 
 .layout {
-  width: min(1180px, calc(100vw - 2rem));
+  width: min(1380px, calc(100vw - 2rem));
   margin: 2rem auto 3rem;
 }
 
 .hero {
   margin-bottom: 1.4rem;
   padding: 1.25rem 1.5rem;
+}
+
+.preview-toggle {
+  margin-top: 0.9rem;
 }
 
 .eyebrow {
@@ -119,16 +123,16 @@ h1 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.5rem;
-  height: 1.2rem;
-  padding: 0 0.3rem;
-  border: 1px solid #aeb9c6;
-  border-radius: 999px;
-  background: #f4f8fc;
+  margin-left: 0.1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: #3a5368;
-  font-size: 0.72rem;
+  font-size: 0.98rem;
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.05;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
   cursor: help;
   user-select: none;
 }
@@ -350,7 +354,8 @@ textarea:focus {
 }
 
 .document {
-  width: min(100%, 794px);
+  width: min(100%, 930px);
+  aspect-ratio: 210 / 297;
   margin: 0 auto;
   background: white;
   border: 1px solid #d4d4d4;
@@ -381,10 +386,13 @@ textarea:focus {
 }
 
 .pm-value {
+  display: block;
+  width: 100%;
   border-bottom: 1px dotted #6f6f6f;
   min-height: 1.35rem;
   padding: 0 0 3px;
   word-break: break-word;
+  white-space: pre-wrap;
   font-size: 1.03rem;
 }
 
@@ -480,7 +488,7 @@ textarea:focus {
 @media (min-width: 980px) {
   .layout {
     display: grid;
-    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+    grid-template-columns: minmax(0, 0.98fr) minmax(0, 1.02fr);
     column-gap: 1rem;
     align-items: start;
   }
@@ -500,6 +508,19 @@ textarea:focus {
     top: 1rem;
     align-self: start;
   }
+
+  .layout.layout-preview-hidden {
+    display: block;
+  }
+
+  .layout.layout-preview-hidden .hero,
+  .layout.layout-preview-hidden .form-grid {
+    grid-column: auto;
+  }
+}
+
+.preview-shell.hidden {
+  display: none;
 }
 
 @media (max-width: 780px) {

@@ -18,13 +18,14 @@
       <p class="eyebrow">Převod vozidla</p>
       <h1>Plná moc</h1>
       <p class="lead">Vyplňte jen potřebné údaje. Zbytek lze automaticky načíst z ARES podle IČO nebo názvu.</p>
+      <button id="togglePreviewBtn" class="btn btn-ghost preview-toggle" type="button" aria-expanded="true">Skrýt náhled</button>
     </header>
 
     <form id="powerForm" class="form-grid" autocomplete="on">
       <section class="card">
         <h2>Zmocnitel
           <span class="info-tip" tabindex="0" aria-label="Informace o zmocniteli">
-            (i)
+            ℹ️
             <span class="info-bubble">Zmocnitel je osoba, která uděluje plnou moc jiné osobě, aby ji zastupovala</span>
           </span>
         </h2>
@@ -57,7 +58,7 @@
       <section class="card">
         <h2>Zmocněnec
           <span class="info-tip" tabindex="0" aria-label="Informace o zmocněnci">
-            (i)
+            ℹ️
             <span class="info-bubble">Zmocněnec je osoba, která plnou moc přijímá a jedná jménem zmocnitele</span>
           </span>
         </h2>
@@ -152,15 +153,15 @@
 
         <div class="pm-row">
           <span class="pm-label">Já, níže podepsaný</span>
-          <span id="previewGrantorName" class="pm-value">....................................</span>
+          <span id="previewGrantorName" class="pm-value"></span>
         </div>
         <div class="pm-row">
           <span class="pm-label">se sídlem (bytem)</span>
-          <span id="previewGrantorAddress" class="pm-value">....................................</span>
+          <span id="previewGrantorAddress" class="pm-value"></span>
         </div>
         <div class="pm-row">
           <span class="pm-label">IČ/RČ</span>
-          <span id="previewGrantorId" class="pm-value">....................................</span>
+          <span id="previewGrantorId" class="pm-value"></span>
         </div>
         <p class="pm-note">(dále jako <strong>„zmocnitel“</strong>)</p>
 
@@ -168,15 +169,15 @@
 
         <div class="pm-row">
           <span class="pm-label">Společnost/osobu</span>
-          <span id="previewAttorneyName" class="pm-value">....................................</span>
+          <span id="previewAttorneyName" class="pm-value"></span>
         </div>
         <div class="pm-row">
           <span class="pm-label">se sídlem/bytem</span>
-          <span id="previewAttorneyAddress" class="pm-value">....................................</span>
+          <span id="previewAttorneyAddress" class="pm-value"></span>
         </div>
         <div class="pm-row">
           <span class="pm-label">IČ/RČ</span>
-          <span id="previewAttorneyId" class="pm-value">....................................</span>
+          <span id="previewAttorneyId" class="pm-value"></span>
         </div>
         <p class="pm-note">(dále jako <strong>„zmocněnec“</strong>)</p>
 
@@ -187,15 +188,15 @@
 
         <div class="pm-row pm-vehicle pm-vehicle-first">
           <span class="pm-label">Typ a model vozu</span>
-          <span id="previewVehicleTypeModel" class="pm-value">....................................</span>
+          <span id="previewVehicleTypeModel" class="pm-value"></span>
         </div>
         <div id="previewSpzRow" class="pm-row pm-vehicle">
           <span class="pm-label">SPZ / RZ</span>
-          <span id="previewVehicleSpz" class="pm-value">....................................</span>
+          <span id="previewVehicleSpz" class="pm-value"></span>
         </div>
         <div class="pm-row pm-vehicle pm-vehicle-last">
           <span class="pm-label">Číslo karoserie - VIN</span>
-          <span id="previewVehicleVin" class="pm-value">....................................</span>
+          <span id="previewVehicleVin" class="pm-value"></span>
         </div>
 
         <p class="pm-text pm-bottom">tato plná moc není ve výše uvedeném rozsahu ničím omezena. Zplnomocnění v plném rozsahu zmocněnec přijímá.</p>
