@@ -108,6 +108,62 @@ h1 {
   font-size: 1.25rem;
 }
 
+.card h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.2rem;
+  padding: 0 0.3rem;
+  border: 1px solid #aeb9c6;
+  border-radius: 999px;
+  background: #f4f8fc;
+  color: #3a5368;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+}
+
+.info-tip:focus {
+  outline: none;
+}
+
+.info-bubble {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 0.4rem);
+  transform: translateX(-50%);
+  width: min(300px, 75vw);
+  padding: 0.52rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid #cfd8e2;
+  background: #f9fcff;
+  color: #243546;
+  font-family: "Sora", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.35;
+  box-shadow: 0 12px 28px rgba(27, 43, 60, 0.2);
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.info-tip:hover .info-bubble,
+.info-tip:focus-visible .info-bubble {
+  opacity: 1;
+}
+
 .field {
   display: grid;
   gap: 0.38rem;
@@ -223,9 +279,14 @@ textarea:focus {
 }
 
 .checklist input[type="checkbox"] {
-  margin-top: 0.14rem;
+  flex: 0 0 1rem;
+  flex-shrink: 0;
+  display: block;
+  margin: 0.14rem 0 0;
   width: 1rem;
   height: 1rem;
+  min-width: 1rem;
+  min-height: 1rem;
   accent-color: var(--accent);
 }
 
@@ -413,6 +474,31 @@ textarea:focus {
 
   .span-2 {
     grid-column: span 2;
+  }
+}
+
+@media (min-width: 980px) {
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+    column-gap: 1rem;
+    align-items: start;
+  }
+
+  .hero {
+    grid-column: 1 / -1;
+  }
+
+  .form-grid {
+    grid-column: 1;
+  }
+
+  .preview-shell {
+    grid-column: 2;
+    margin-top: 0;
+    position: sticky;
+    top: 1rem;
+    align-self: start;
   }
 }
 
