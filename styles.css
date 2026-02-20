@@ -457,6 +457,25 @@ textarea:focus {
   font-size: 1.03rem;
 }
 
+.pm-sign-left {
+  display: grid;
+  align-content: start;
+  min-width: 230px;
+}
+
+.pm-sign-left-fallback {
+  width: 230px;
+  justify-items: center;
+}
+
+.pm-sign-left-fallback[hidden] {
+  display: none;
+}
+
+.pm-sign-left-fallback:not([hidden]) {
+  display: grid;
+}
+
 .pm-sign-right {
   display: grid;
   justify-items: center;

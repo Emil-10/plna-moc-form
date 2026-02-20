@@ -1,4 +1,10 @@
 const ARES_BASE = "https://ares.gov.cz/ekonomicke-subjekty-v-be/rest";
+const MORPHODITA_BASE = "https://lindat.mff.cuni.cz/services/morphodita/api";
+const MORPHODITA_MODEL = "czech-morfflex2.1-pdtc2.0-250909";
+const DEFAULT_SIGN_PLACE = "Praha";
+const DEFAULT_SIGN_PLACE_LOCATIVE = "Praze";
+const MORPHODITA_TIMEOUT_MS = 3200;
+const LOCATIVE_CASE = "6";
 
 const form = document.getElementById("powerForm");
 const layout = document.querySelector(".layout");
@@ -12,6 +18,19 @@ const ARIAL_BOLD_URL = "./assets/fonts/arialbd.ttf";
 const ARIAL_ITALIC_URL = "./assets/fonts/ariali.ttf";
 const ARIAL_BOLDITALIC_URL = "./assets/fonts/arialbi.ttf";
 let arialFontPromise = null;
+const placeCaseCache = new Map();
+let placeCaseState = {
+  mode: "declined",
+  basePlace: DEFAULT_SIGN_PLACE,
+  locativePlace: DEFAULT_SIGN_PLACE_LOCATIVE
+};
+let placeCaseResolveTimer = null;
+let placeCaseResolveRequestId = 0;
+placeCaseCache.set(DEFAULT_SIGN_PLACE.toLocaleLowerCase("cs-CZ"), {
+  mode: "declined",
+  basePlace: DEFAULT_SIGN_PLACE,
+  locativePlace: DEFAULT_SIGN_PLACE_LOCATIVE
+});
 
 const fieldIds = [
   "grantorIco",
@@ -55,6 +74,12 @@ function initialize() {
   fields.signDate.addEventListener("input", () => {
     fields.signDate.value = sanitizeDate(fields.signDate.value);
   });
+  fields.signPlace.addEventListener("input", () => {
+    schedulePlaceCaseResolution();
+  });
+  fields.signPlace.addEventListener("blur", () => {
+    schedulePlaceCaseResolution(true);
+  });
 
   form.addEventListener("input", () => {
     clearMessages();
@@ -66,6 +91,7 @@ function initialize() {
   downloadPdfBtn.addEventListener("click", handlePdfDownload);
   setupPreviewToggle();
   setDefaultActionsChecked();
+  schedulePlaceCaseResolution(true);
 
   updatePreview();
 }
@@ -82,6 +108,237 @@ function setupPreviewToggle() {
     togglePreviewBtn.textContent = isHidden ? "Zobrazit náhled" : "Skrýt náhled";
     togglePreviewBtn.setAttribute("aria-expanded", String(!isHidden));
   });
+}
+
+function schedulePlaceCaseResolution(immediate = false) {
+  clearTimeout(placeCaseResolveTimer);
+
+  if (immediate) {
+    resolvePlaceCaseForCurrentInput().catch(() => {
+      // Ignore and keep fallback rendering.
+    });
+    return;
+  }
+
+  placeCaseResolveTimer = setTimeout(() => {
+    resolvePlaceCaseForCurrentInput().catch(() => {
+      // Ignore and keep fallback rendering.
+    });
+  }, 280);
+}
+
+async function resolvePlaceCaseForCurrentInput() {
+  const requestId = ++placeCaseResolveRequestId;
+  const basePlace = normalizePlaceInput(fields.signPlace.value, DEFAULT_SIGN_PLACE);
+  const resolved = await resolvePlaceCase(basePlace);
+
+  if (requestId !== placeCaseResolveRequestId) {
+    return resolved;
+  }
+
+  placeCaseState = resolved;
+  updatePreview();
+  return resolved;
+}
+
+function normalizePlaceInput(rawValue, fallback) {
+  const text = String(rawValue || "").replace(/\s+/g, " ").trim();
+  return text || fallback;
+}
+
+async function resolvePlaceCase(basePlace) {
+  const normalizedPlace = normalizePlaceInput(basePlace, DEFAULT_SIGN_PLACE);
+  const cacheKey = normalizedPlace.toLocaleLowerCase("cs-CZ");
+  const cached = placeCaseCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  try {
+    const locativePlace = await declinePlaceToLocative(normalizedPlace);
+    if (locativePlace) {
+      const resolved = {
+        mode: "declined",
+        basePlace: normalizedPlace,
+        locativePlace
+      };
+      placeCaseCache.set(cacheKey, resolved);
+      return resolved;
+    }
+  } catch (_) {
+    // Use manual fallback signature when the external service is unavailable.
+  }
+
+  return {
+    mode: "fallback",
+    basePlace: normalizedPlace,
+    locativePlace: DEFAULT_SIGN_PLACE_LOCATIVE
+  };
+}
+
+async function declinePlaceToLocative(placeName) {
+  const tagged = await callMorphodita("tag", placeName);
+  const sentences = Array.isArray(tagged?.result) ? tagged.result : [];
+  const tokens = Array.isArray(sentences[0]) ? sentences[0] : [];
+
+  if (!tokens.length) {
+    return "";
+  }
+
+  const replacements = new Map();
+  const generationLines = [];
+  const generationMeta = [];
+  let activeCase = LOCATIVE_CASE;
+
+  tokens.forEach((token, index) => {
+    const rawToken = String(token?.token || "");
+    const rawTag = String(token?.tag || "");
+    if (!rawToken || !rawTag) {
+      return;
+    }
+
+    if (rawTag.startsWith("R")) {
+      const prepositionCase = getRequiredCaseFromPrepositionTag(rawTag);
+      activeCase = prepositionCase || activeCase;
+      return;
+    }
+
+    if (rawTag.startsWith("Z")) {
+      activeCase = LOCATIVE_CASE;
+      return;
+    }
+
+    if (!shouldInflectPlaceToken(rawTag)) {
+      return;
+    }
+
+    const currentCase = getCaseFromTag(rawTag);
+    if (!currentCase || currentCase === activeCase) {
+      return;
+    }
+
+    const targetTag = replaceCaseInTag(rawTag, activeCase);
+    if (!targetTag) {
+      return;
+    }
+
+    const lemma = String(token?.lemma || rawToken).trim() || rawToken;
+    generationLines.push(`${lemma}\t${targetTag}`);
+    generationMeta.push({
+      index,
+      sourceToken: rawToken,
+      targetTag
+    });
+  });
+
+  if (generationLines.length) {
+    const generated = await callMorphodita("generate", generationLines.join("\n"));
+    const generatedRows = Array.isArray(generated?.result) ? generated.result : [];
+
+    generationMeta.forEach((task, rowIndex) => {
+      const forms = Array.isArray(generatedRows[rowIndex]) ? generatedRows[rowIndex] : [];
+      const exact = forms.find((item) => item?.tag === task.targetTag && item?.form);
+      const first = forms.find((item) => item?.form);
+      const inflected = exact?.form || first?.form;
+
+      if (inflected) {
+        replacements.set(task.index, applySourceCasing(task.sourceToken, String(inflected)));
+      }
+    });
+  }
+
+  let output = "";
+  tokens.forEach((token, index) => {
+    const sourceToken = String(token?.token || "");
+    const tokenText = replacements.has(index) ? replacements.get(index) : sourceToken;
+    output += tokenText;
+    output += typeof token?.space === "string" ? token.space : "";
+  });
+
+  return output.trim();
+}
+
+async function callMorphodita(method, data) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), MORPHODITA_TIMEOUT_MS);
+
+  try {
+    const body = new URLSearchParams();
+    body.set("model", MORPHODITA_MODEL);
+    body.set("data", data);
+    body.set("output", "json");
+
+    const response = await fetch(`${MORPHODITA_BASE}/${method}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body,
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`MorphoDiTa ${method} failed with status ${response.status}`);
+    }
+
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function shouldInflectPlaceToken(tag) {
+  if (typeof tag !== "string" || tag.length < 5) {
+    return false;
+  }
+
+  const pos = tag[0];
+  return ["A", "C", "N", "P"].includes(pos) && /[1-7]/.test(tag[4]);
+}
+
+function getCaseFromTag(tag) {
+  if (typeof tag !== "string" || tag.length < 5) {
+    return "";
+  }
+  return /[1-7]/.test(tag[4]) ? tag[4] : "";
+}
+
+function replaceCaseInTag(tag, targetCase) {
+  if (typeof tag !== "string" || tag.length < 5 || !/[1-7]/.test(targetCase)) {
+    return "";
+  }
+
+  const chars = tag.split("");
+  chars[4] = targetCase;
+  return chars.join("");
+}
+
+function getRequiredCaseFromPrepositionTag(tag) {
+  if (typeof tag !== "string" || tag.length < 5 || tag[0] !== "R") {
+    return "";
+  }
+  return /[1-7]/.test(tag[4]) ? tag[4] : "";
+}
+
+function applySourceCasing(sourceToken, inflectedToken) {
+  if (!sourceToken) {
+    return inflectedToken;
+  }
+
+  const sourceUpper = sourceToken.toLocaleUpperCase("cs-CZ");
+  const sourceLower = sourceToken.toLocaleLowerCase("cs-CZ");
+
+  if (sourceToken === sourceUpper && sourceToken !== sourceLower) {
+    return inflectedToken.toLocaleUpperCase("cs-CZ");
+  }
+
+  if (
+    sourceToken[0] &&
+    sourceToken[0] === sourceToken[0].toLocaleUpperCase("cs-CZ") &&
+    sourceToken.slice(1) === sourceToken.slice(1).toLocaleLowerCase("cs-CZ")
+  ) {
+    return inflectedToken[0].toLocaleUpperCase("cs-CZ") + inflectedToken.slice(1);
+  }
+
+  return inflectedToken;
 }
 
 function setDefaultActionsChecked() {
@@ -295,8 +552,26 @@ function updatePreview() {
 
   setText("previewVehicleVin", valueOrBlank(fields.vehicleVin.value));
 
-  setText("previewSignPlace", valueOrDots(fields.signPlace.value, "Praha"));
-  setText("previewSignDate", valueOrDots(fields.signDate.value));
+  const basePlace = normalizePlaceInput(fields.signPlace.value, DEFAULT_SIGN_PLACE);
+  const signDateText = valueOrDots(fields.signDate.value, formatDate(new Date()));
+  const useResolvedPlace =
+    placeCaseState.mode === "declined" &&
+    placeCaseState.basePlace === basePlace &&
+    !!placeCaseState.locativePlace;
+  const useFallbackSignature =
+    placeCaseState.mode === "fallback" &&
+    placeCaseState.basePlace === basePlace;
+
+  setText("previewSignPlace", useResolvedPlace ? placeCaseState.locativePlace : basePlace);
+  setText("previewSignDate", signDateText);
+  setText("previewPlaceDateFallbackText", `${DEFAULT_SIGN_PLACE}, ${signDateText}`);
+
+  const previewPlaceDatePrimary = document.getElementById("previewPlaceDatePrimary");
+  const previewPlaceDateFallback = document.getElementById("previewPlaceDateFallback");
+  if (previewPlaceDatePrimary && previewPlaceDateFallback) {
+    previewPlaceDatePrimary.hidden = useFallbackSignature;
+    previewPlaceDateFallback.hidden = !useFallbackSignature;
+  }
 
   const selectedActions = getSelectedActions();
   const actionsList = document.getElementById("previewActions");
@@ -490,23 +765,46 @@ async function buildTextPdf() {
     20
   );
 
-  ensureSpace(12);
+  const basePlace = normalizePlaceInput(fields.signPlace.value, DEFAULT_SIGN_PLACE);
+  let resolvedPlaceCase = placeCaseState;
+  if (resolvedPlaceCase.basePlace !== basePlace) {
+    resolvedPlaceCase = await resolvePlaceCase(basePlace);
+    placeCaseState = resolvedPlaceCase;
+  }
+
+  const signDateText = valueOrDots(fields.signDate.value, formatDate(new Date()));
+  const useFallbackSignature = resolvedPlaceCase.mode === "fallback";
+
+  ensureSpace(useFallbackSignature ? 18 : 12);
   doc.setFont("Arial", "normal");
   doc.setFontSize(12);
 
-  let leftX = labelX;
-  doc.text("V ", leftX, y);
-  leftX += doc.getTextWidth("V ");
-  doc.setFont("Arial", "bold");
-  doc.text(valueOrDots(fields.signPlace.value, "Praha"), leftX, y);
-  leftX += doc.getTextWidth(valueOrDots(fields.signPlace.value, "Praha"));
+  if (useFallbackSignature) {
+    doc.text(`${DEFAULT_SIGN_PLACE}, ${signDateText}`, labelX, y);
+    const placeDateLineEndX = labelX + 66;
+    drawDottedLine(labelX, placeDateLineEndX, y + 4.6);
 
-  doc.setFont("Arial", "normal");
-  doc.text(" dne ", leftX, y);
-  leftX += doc.getTextWidth(" dne ");
+    doc.setFont("Arial", "italic");
+    doc.setFontSize(10.5);
+    doc.text("(Místo, datum)", (labelX + placeDateLineEndX) / 2, y + 9.3, { align: "center" });
 
-  doc.setFont("Arial", "bold");
-  doc.text(valueOrDots(fields.signDate.value), leftX, y);
+    doc.setFont("Arial", "normal");
+    doc.setFontSize(12);
+  } else {
+    let leftX = labelX;
+    doc.text("V ", leftX, y);
+    leftX += doc.getTextWidth("V ");
+    doc.setFont("Arial", "bold");
+    doc.text(resolvedPlaceCase.locativePlace, leftX, y);
+    leftX += doc.getTextWidth(resolvedPlaceCase.locativePlace);
+
+    doc.setFont("Arial", "normal");
+    doc.text(" dne ", leftX, y);
+    leftX += doc.getTextWidth(" dne ");
+
+    doc.setFont("Arial", "bold");
+    doc.text(signDateText, leftX, y);
+  }
 
   const signatureLineStartX = pageWidth - marginRight - 66;
   drawDottedLine(signatureLineStartX, valueEndX, y + 1.2);
@@ -585,6 +883,7 @@ function detectCurrentPlace(silent) {
       const city = await getCityByCoords(position.coords.latitude, position.coords.longitude);
       if (city) {
         fields.signPlace.value = city;
+        schedulePlaceCaseResolution(true);
         updatePreview();
         if (!silent) {
           setMessage(`Místo podpisu předvyplněno: ${city}`);
