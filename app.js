@@ -484,25 +484,99 @@ function formatAddress(sidlo) {
     return "";
   }
 
-  if (sidlo.textovaAdresa) {
-    return formatPostCode(sidlo.textovaAdresa);
-  }
-
   const parts = [];
-  const street = sidlo.nazevUlice ? sidlo.nazevUlice : "";
-  const house = sidlo.cisloDomovni ? String(sidlo.cisloDomovni) : "";
-  const orient = sidlo.cisloOrientacni ? `/${sidlo.cisloOrientacni}` : "";
-  const city = sidlo.nazevObce ? sidlo.nazevObce : "";
+  const street = formatStreetPart(sidlo);
+  const city = resolveCityPart(sidlo);
+  const district = resolveDistrictPart(sidlo, city);
   const psc = sidlo.psc ? formatPscNumber(sidlo.psc) : "";
 
-  if (street || house) {
-    parts.push(`${street} ${house}${orient}`.trim());
+  if (street) {
+    parts.push(street);
   }
   if (psc || city) {
     parts.push(`${psc} ${city}`.trim());
   }
+  if (district) {
+    if (parts.length) {
+      const last = parts.pop();
+      parts.push(`${last} - ${district}`);
+    } else {
+      parts.push(district);
+    }
+  }
 
-  return parts.join(", ").trim();
+  if (parts.length) {
+    return parts.join(", ").trim();
+  }
+
+  return sidlo.textovaAdresa ? formatPostCode(sidlo.textovaAdresa) : "";
+}
+
+function formatStreetPart(sidlo) {
+  const street = normalizeAddressToken(sidlo.nazevUlice);
+  const house = sidlo.cisloDomovni ? String(sidlo.cisloDomovni) : "";
+  const orient = sidlo.cisloOrientacni ? `/${sidlo.cisloOrientacni}` : "";
+  return `${street} ${house}${orient}`.trim();
+}
+
+function resolveCityPart(sidlo) {
+  const city = normalizeAddressToken(sidlo.nazevObce);
+  const candidates = [
+    normalizeAddressToken(sidlo.nazevSpravnihoObvodu),
+    normalizeAddressToken(sidlo.nazevMestskehoObvodu),
+    city
+  ].filter(Boolean);
+
+  if (!candidates.length) {
+    return "";
+  }
+
+  if (city) {
+    const extended = candidates.find(
+      (candidate) =>
+        candidate !== city &&
+        (candidate.startsWith(`${city} `) || candidate.startsWith(`${city}-`))
+    );
+    if (extended) {
+      return extended;
+    }
+  }
+
+  return city || candidates[0];
+}
+
+function resolveDistrictPart(sidlo, cityPart) {
+  const city = normalizeAddressToken(cityPart);
+  const candidates = [
+    normalizeAddressToken(sidlo.nazevCastiObce),
+    normalizeAddressToken(sidlo.nazevMestskeCastiObvodu)
+  ];
+
+  for (let candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    if (city && candidate.startsWith(`${city}-`)) {
+      candidate = candidate.slice(city.length + 1).trim();
+    }
+
+    if (!candidate) {
+      continue;
+    }
+
+    if (city && (candidate === city || city.includes(candidate) || candidate.includes(city))) {
+      continue;
+    }
+
+    return candidate;
+  }
+
+  return "";
+}
+
+function normalizeAddressToken(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function formatPscNumber(psc) {
@@ -705,8 +779,8 @@ async function buildTextPdf() {
   };
 
   drawLabeledValueRow("Já, níže podepsaný", fields.grantorName.value.trim());
-  drawLabeledValueRow("se sídlem (bytem)", fields.grantorAddress.value.trim());
   drawLabeledValueRow("IČ/RČ", fields.grantorId.value.trim());
+  drawLabeledValueRow("se sídlem (bytem)", fields.grantorAddress.value.trim());
 
   ensureSpace(10);
   doc.setFont("Arial", "bold");
@@ -722,8 +796,8 @@ async function buildTextPdf() {
   y += 10;
 
   drawLabeledValueRow("Společnost/osobu", fields.attorneyName.value.trim());
-  drawLabeledValueRow("se sídlem/bytem", fields.attorneyAddress.value.trim());
   drawLabeledValueRow("IČ/RČ", fields.attorneyId.value.trim());
+  drawLabeledValueRow("se sídlem/bytem", fields.attorneyAddress.value.trim());
 
   ensureSpace(10);
   doc.setFont("Arial", "bold");
