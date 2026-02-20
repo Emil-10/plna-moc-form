@@ -29,24 +29,15 @@
             <span class="info-bubble">Zmocnitel je osoba, která uděluje plnou moc jiné osobě, aby ji zastupovala</span>
           </span>
         </h2>
-        <div class="field">
-          <label for="grantorLookup">Vyhledat v ARES (IČO nebo název)</label>
-          <input id="grantorLookup" type="text" placeholder="Např. 06002293 nebo EMPrace">
-          <div id="grantorSuggestions" class="suggestions" aria-live="polite"></div>
-        </div>
-
         <div class="grid-two">
           <div class="field">
-            <label for="grantorIco">IČO</label>
-            <input id="grantorIco" type="text" inputmode="numeric" maxlength="8" pattern="\d{8}" placeholder="8 číslic">
+            <label for="grantorName">Název / jméno</label>
+            <input id="grantorName" type="text" placeholder="Vyhledat českou firmu..." required>
+            <div id="grantorSuggestions" class="suggestions" aria-live="polite"></div>
           </div>
           <div class="field">
             <label for="grantorId">IČ/RČ</label>
-            <input id="grantorId" type="text" placeholder="IČO, RČ nebo datum narození">
-          </div>
-          <div class="field span-2">
-            <label for="grantorName">Název / jméno</label>
-            <input id="grantorName" type="text" required>
+            <input id="grantorId" type="text" placeholder="Vyhledat české IČ">
           </div>
           <div class="field span-2">
             <label for="grantorAddress">Sídlo / bydliště</label>
@@ -62,24 +53,15 @@
             <span class="info-bubble">Zmocněnec je osoba, která plnou moc přijímá a jedná jménem zmocnitele</span>
           </span>
         </h2>
-        <div class="field">
-          <label for="attorneyLookup">Vyhledat v ARES (IČO nebo název)</label>
-          <input id="attorneyLookup" type="text" placeholder="Např. 06568513 nebo Arev Group">
-          <div id="attorneySuggestions" class="suggestions" aria-live="polite"></div>
-        </div>
-
         <div class="grid-two">
           <div class="field">
-            <label for="attorneyIco">IČO</label>
-            <input id="attorneyIco" type="text" inputmode="numeric" maxlength="8" pattern="\d{8}" placeholder="8 číslic">
+            <label for="attorneyName">Název / jméno</label>
+            <input id="attorneyName" type="text" placeholder="Vyhledat českou firmu..." required>
+            <div id="attorneySuggestions" class="suggestions" aria-live="polite"></div>
           </div>
           <div class="field">
             <label for="attorneyId">IČ/RČ</label>
-            <input id="attorneyId" type="text" placeholder="IČO, RČ nebo datum narození">
-          </div>
-          <div class="field span-2">
-            <label for="attorneyName">Název / jméno</label>
-            <input id="attorneyName" type="text" required>
+            <input id="attorneyId" type="text" placeholder="Vyhledat české IČ">
           </div>
           <div class="field span-2">
             <label for="attorneyAddress">Sídlo / bydliště</label>
@@ -201,7 +183,14 @@
 
         <p class="pm-text pm-bottom">tato plná moc není ve výše uvedeném rozsahu ničím omezena. Zplnomocnění v plném rozsahu zmocněnec přijímá.</p>
         <p class="pm-signature">
-          <span>V <strong id="previewSignPlace">Praha</strong> dne <strong id="previewSignDate">....................................</strong></span>
+          <span class="pm-sign-left">
+            <span id="previewPlaceDatePrimary">V <strong id="previewSignPlace">Praha</strong> dne <strong id="previewSignDate">....................................</strong></span>
+            <span id="previewPlaceDateFallback" class="pm-sign-left-fallback" hidden>
+              <span id="previewPlaceDateFallbackText">Praha, 19.02.2026</span>
+              <span class="pm-sign-line"></span>
+              <span class="pm-sign-role">(Místo, datum)</span>
+            </span>
+          </span>
           <span class="pm-sign-right">
             <span class="pm-sign-line"></span>
             <span class="pm-sign-role">(zmocnitel)</span>

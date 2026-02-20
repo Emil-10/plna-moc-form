@@ -33,11 +33,9 @@ placeCaseCache.set(DEFAULT_SIGN_PLACE.toLocaleLowerCase("cs-CZ"), {
 });
 
 const fieldIds = [
-  "grantorIco",
   "grantorId",
   "grantorName",
   "grantorAddress",
-  "attorneyIco",
   "attorneyId",
   "attorneyName",
   "attorneyAddress",
@@ -64,12 +62,6 @@ function initialize() {
   });
   fields.vehicleSpz.addEventListener("input", () => {
     fields.vehicleSpz.value = sanitizeSpz(fields.vehicleSpz.value);
-  });
-  fields.grantorIco.addEventListener("input", () => {
-    fields.grantorIco.value = sanitizeIco(fields.grantorIco.value);
-  });
-  fields.attorneyIco.addEventListener("input", () => {
-    fields.attorneyIco.value = sanitizeIco(fields.attorneyIco.value);
   });
   fields.signDate.addEventListener("input", () => {
     fields.signDate.value = sanitizeDate(fields.signDate.value);
@@ -348,19 +340,16 @@ function setDefaultActionsChecked() {
 }
 
 function setupSubjectLookup(prefix) {
-  const lookup = document.getElementById(`${prefix}Lookup`);
   const suggestions = document.getElementById(`${prefix}Suggestions`);
-  const ico = document.getElementById(`${prefix}Ico`);
   const id = document.getElementById(`${prefix}Id`);
   const name = document.getElementById(`${prefix}Name`);
   const address = document.getElementById(`${prefix}Address`);
 
   let searchTimer = null;
   let requestId = 0;
-  let activeItems = [];
 
-  lookup.addEventListener("input", () => {
-    const query = lookup.value.trim();
+  name.addEventListener("input", () => {
+    const query = name.value.trim();
     clearTimeout(searchTimer);
     hideSuggestions(suggestions);
 
@@ -377,12 +366,11 @@ function setupSubjectLookup(prefix) {
         return;
       }
 
-      activeItems = found;
       renderSuggestions({
         suggestions,
-        items: activeItems,
+        items: found,
         onSelect: (item) => {
-          applySubject(item, { lookup, ico, id, name, address });
+          applySubject(item, { id, name, address });
           hideSuggestions(suggestions);
           updatePreview();
         }
@@ -390,24 +378,27 @@ function setupSubjectLookup(prefix) {
     }, 260);
   });
 
-  ico.addEventListener("blur", async () => {
-    const cleanIco = sanitizeIco(ico.value);
-    ico.value = cleanIco;
-    if (!/^\d{8}$/.test(cleanIco)) {
+  id.addEventListener("blur", async () => {
+    const ico = extractIcoCandidate(id.value);
+    if (!ico) {
       return;
     }
 
-    const detail = await fetchByIco(cleanIco);
+    const detail = await fetchByIco(ico);
     if (!detail) {
       return;
     }
 
-    applySubject(detail, { lookup, ico, id, name, address });
+    applySubject(detail, { id, name, address });
     updatePreview();
   });
 
   document.addEventListener("click", (event) => {
-    if (!event.target.closest(`#${lookup.id}`) && !event.target.closest(`#${suggestions.id}`)) {
+    if (
+      !event.target.closest(`#${name.id}`) &&
+      !event.target.closest(`#${id.id}`) &&
+      !event.target.closest(`#${suggestions.id}`)
+    ) {
       hideSuggestions(suggestions);
     }
   });
@@ -452,17 +443,12 @@ async function fetchByIco(ico) {
 }
 
 function applySubject(subject, refs) {
-  refs.ico.value = subject.ico || refs.ico.value || "";
   refs.name.value = subject.obchodniJmeno || refs.name.value || "";
   refs.address.value = formatAddress(subject.sidlo) || refs.address.value || "";
 
-  if (!refs.id.value.trim()) {
-    refs.id.value = subject.ico || "";
+  if (subject.ico) {
+    refs.id.value = subject.ico;
   }
-
-  const lookupName = subject.obchodniJmeno || "";
-  const lookupIco = subject.ico ? ` (${subject.ico})` : "";
-  refs.lookup.value = `${lookupName}${lookupIco}`.trim();
 }
 
 function renderSuggestions({ suggestions, items, onSelect }) {
@@ -533,11 +519,11 @@ function formatPostCode(text) {
 
 function updatePreview() {
   setText("previewGrantorName", valueOrBlank(fields.grantorName.value));
-  setText("previewGrantorId", valueOrBlank(fields.grantorId.value || fields.grantorIco.value));
+  setText("previewGrantorId", valueOrBlank(fields.grantorId.value));
   setText("previewGrantorAddress", valueOrBlank(fields.grantorAddress.value));
 
   setText("previewAttorneyName", valueOrBlank(fields.attorneyName.value));
-  setText("previewAttorneyId", valueOrBlank(fields.attorneyId.value || fields.attorneyIco.value));
+  setText("previewAttorneyId", valueOrBlank(fields.attorneyId.value));
   setText("previewAttorneyAddress", valueOrBlank(fields.attorneyAddress.value));
 
   const typeModel = [fields.vehicleBrand.value.trim(), fields.vehicleModel.value.trim()].filter(Boolean).join(" ");
@@ -720,7 +706,7 @@ async function buildTextPdf() {
 
   drawLabeledValueRow("Já, níže podepsaný", fields.grantorName.value.trim());
   drawLabeledValueRow("se sídlem (bytem)", fields.grantorAddress.value.trim());
-  drawLabeledValueRow("IČ/RČ", (fields.grantorId.value || fields.grantorIco.value).trim());
+  drawLabeledValueRow("IČ/RČ", fields.grantorId.value.trim());
 
   ensureSpace(10);
   doc.setFont("Arial", "bold");
@@ -737,7 +723,7 @@ async function buildTextPdf() {
 
   drawLabeledValueRow("Společnost/osobu", fields.attorneyName.value.trim());
   drawLabeledValueRow("se sídlem/bytem", fields.attorneyAddress.value.trim());
-  drawLabeledValueRow("IČ/RČ", (fields.attorneyId.value || fields.attorneyIco.value).trim());
+  drawLabeledValueRow("IČ/RČ", fields.attorneyId.value.trim());
 
   ensureSpace(10);
   doc.setFont("Arial", "bold");
@@ -956,8 +942,9 @@ function formatDate(date) {
   return `${day}.${month}.${year}`;
 }
 
-function sanitizeIco(value) {
-  return value.replace(/\D/g, "").slice(0, 8);
+function extractIcoCandidate(value) {
+  const compact = String(value || "").replace(/\s+/g, "");
+  return /^\d{8}$/.test(compact) ? compact : "";
 }
 
 function sanitizeVin(value) {
