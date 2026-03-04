@@ -15,13 +15,60 @@ const layout = document.querySelector(".layout");
 const previewShell = document.querySelector(".preview-shell");
 const message = document.getElementById("formMessage");
 const actionsError = document.getElementById("actionsError");
+const signPowerBtn = document.getElementById("signPowerBtn");
 const downloadPdfBtn = document.getElementById("downloadPdfBtn");
 const togglePreviewBtn = document.getElementById("togglePreviewBtn");
+const signatureModal = document.getElementById("signatureModal");
+const closeSignatureModalBtn = document.getElementById("closeSignatureModalBtn");
+const signatureCanvas = document.getElementById("signatureCanvas");
+const clearSignatureBtn = document.getElementById("clearSignatureBtn");
+const saveSignatureBtn = document.getElementById("saveSignatureBtn");
+const generateStampBtn = document.getElementById("generateStampBtn");
+const clearStampBtn = document.getElementById("clearStampBtn");
+const signatureModalMessage = document.getElementById("signatureModalMessage");
+const previewSignStage = document.getElementById("previewSignStage");
+const previewSignatureImage = document.getElementById("previewSignatureImage");
+const previewStamp = document.getElementById("previewStamp");
+const signatureComposeStage = document.getElementById("signatureComposeStage");
+const signatureComposeImage = document.getElementById("signatureComposeImage");
+const signatureComposeStamp = document.getElementById("signatureComposeStamp");
 const ARIAL_REGULAR_URL = "./assets/fonts/arial.ttf";
 const ARIAL_BOLD_URL = "./assets/fonts/arialbd.ttf";
 const ARIAL_ITALIC_URL = "./assets/fonts/ariali.ttf";
 const ARIAL_BOLDITALIC_URL = "./assets/fonts/arialbi.ttf";
+const SIGNATURE_CANVAS_HEIGHT = 240;
+const SIGNATURE_PAD_LINE_WIDTH = 2.2;
+const PDF_PT_TO_MM = 0.352778;
+const SIGNATURE_STAGE_WIDTH_MM = 66;
+const SIGNATURE_STAGE_HEIGHT_MM = 24;
+const SIGNATURE_STAGE_ASPECT_RATIO = SIGNATURE_STAGE_WIDTH_MM / SIGNATURE_STAGE_HEIGHT_MM;
+const SIGNATURE_IMAGE_WIDTH_RATIO = 0.85;
+const SIGNATURE_STAGE_PADDING_RATIO_X = 0.01;
+const SIGNATURE_STAGE_PADDING_RATIO_Y = 0.01;
+const DEFAULT_SIGNATURE_LAYOUT = Object.freeze({
+  signature: { x: 0.54, y: 0.44 },
+  stamp: { x: 0.54, y: 0.66 }
+});
 let arialFontPromise = null;
+let signaturePadContext = null;
+let signaturePadDrawing = false;
+let signaturePadHasInk = false;
+let signatureResizeTimer = null;
+let signatureDragState = null;
+const signatureState = {
+  imageDataUrl: "",
+  stampLines: [],
+  layout: cloneSignatureLayout()
+};
+const signatureDraftState = {
+  imageDataUrl: "",
+  stampLines: [],
+  layout: cloneSignatureLayout()
+};
+const subjectLookupMeta = {
+  grantor: { dic: "" },
+  attorney: { dic: "" }
+};
 const placeCaseCache = new Map();
 let placeCaseState = {
   mode: "declined",
@@ -93,6 +140,7 @@ function initialize() {
   document.getElementById("detectPlaceBtn").addEventListener("click", () => detectCurrentPlace(false));
   downloadPdfBtn.addEventListener("click", handlePdfDownload);
   setupPreviewToggle();
+  setupSignatureModal();
   setDefaultActionsChecked();
   schedulePlaceCaseResolution(true);
 
@@ -111,6 +159,510 @@ function setupPreviewToggle() {
     togglePreviewBtn.textContent = isHidden ? "Zobrazit náhled" : "Skrýt náhled";
     togglePreviewBtn.setAttribute("aria-expanded", String(!isHidden));
   });
+}
+
+function setupSignatureModal() {
+  if (!signPowerBtn || !signatureModal || !signatureCanvas) {
+    return;
+  }
+
+  signPowerBtn.addEventListener("click", openSignatureModal);
+  closeSignatureModalBtn?.addEventListener("click", closeSignatureModal);
+  clearSignatureBtn?.addEventListener("click", () => {
+    clearSignatureCanvas();
+    setSignatureModalMessage("");
+  });
+  saveSignatureBtn?.addEventListener("click", saveSignatureFromModal);
+  generateStampBtn?.addEventListener("click", generateStampInModal);
+  clearStampBtn?.addEventListener("click", clearStampInModal);
+
+  signatureCanvas.addEventListener("pointerdown", handleSignaturePointerDown);
+  signatureCanvas.addEventListener("pointermove", handleSignaturePointerMove);
+  signatureCanvas.addEventListener("pointerup", handleSignaturePointerUp);
+  signatureCanvas.addEventListener("pointercancel", handleSignaturePointerUp);
+  signatureCanvas.addEventListener("pointerleave", handleSignaturePointerUp);
+
+  signatureModal.addEventListener("click", (event) => {
+    if (event.target === signatureModal) {
+      closeSignatureModal();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !signatureModal.hidden) {
+      closeSignatureModal();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (signatureModal.hidden) {
+      return;
+    }
+    clearTimeout(signatureResizeTimer);
+    signatureResizeTimer = setTimeout(() => {
+      resizeSignatureCanvas(true);
+      renderComposeStage();
+    }, 120);
+  });
+
+  setupSignatureComposeDragging();
+}
+
+function openSignatureModal() {
+  if (!signatureModal || !signatureCanvas) {
+    return;
+  }
+
+  signatureDraftState.imageDataUrl = signatureState.imageDataUrl;
+  signatureDraftState.stampLines = [...signatureState.stampLines];
+  signatureDraftState.layout = cloneSignatureLayout(signatureState.layout);
+
+  signatureModal.hidden = false;
+  document.body.classList.add("modal-open");
+  setSignatureModalMessage("");
+  renderComposeStage();
+
+  requestAnimationFrame(() => {
+    resizeSignatureCanvas(false);
+    if (signatureDraftState.imageDataUrl) {
+      drawSignatureImageToCanvas(signatureDraftState.imageDataUrl);
+    } else {
+      clearSignatureCanvas();
+    }
+  });
+}
+
+function closeSignatureModal() {
+  if (!signatureModal || signatureModal.hidden) {
+    return;
+  }
+
+  signatureModal.hidden = true;
+  signaturePadDrawing = false;
+  signatureDragState = null;
+  document.body.classList.remove("modal-open");
+}
+
+function saveSignatureFromModal() {
+  syncDraftSignatureFromCanvas();
+  signatureState.imageDataUrl = signatureDraftState.imageDataUrl;
+  signatureState.stampLines = normalizeStampLines(signatureDraftState.stampLines);
+  signatureState.layout = cloneSignatureLayout(signatureDraftState.layout);
+
+  closeSignatureModal();
+  updatePreview();
+
+  const hasSignature = Boolean(signatureState.imageDataUrl);
+  const hasStamp = signatureState.stampLines.length > 0;
+  if (hasSignature && hasStamp) {
+    setMessage("Podpis a razítko byly uloženy.");
+    return;
+  }
+  if (hasSignature) {
+    setMessage("Podpis byl uložen.");
+    return;
+  }
+  if (hasStamp) {
+    setMessage("Razítko bylo uloženo.");
+    return;
+  }
+  setMessage("Podpis i razítko byly smazány.");
+}
+
+function generateStampInModal() {
+  const lines = buildStampLinesFromGrantor();
+  if (!lines.length) {
+    setSignatureModalMessage("Pro vygenerování razítka doplňte údaje zmocnitele.", true);
+    return;
+  }
+
+  signatureDraftState.stampLines = lines;
+  renderComposeStage();
+  setSignatureModalMessage("Razítko je připravené. Tažením můžete upravit jeho pozici.");
+}
+
+function clearStampInModal() {
+  if (!signatureDraftState.stampLines.length) {
+    setSignatureModalMessage("Razítko už je smazané.");
+    return;
+  }
+
+  signatureDraftState.stampLines = [];
+  renderComposeStage();
+  setSignatureModalMessage("Razítko bylo smazáno.");
+}
+
+function syncDraftSignatureFromCanvas() {
+  if (!signatureCanvas) {
+    return;
+  }
+
+  signatureDraftState.imageDataUrl = signaturePadHasInk ? signatureCanvas.toDataURL("image/png") : "";
+  renderComposeStage();
+}
+
+function resizeSignatureCanvas(preserveDrawing) {
+  if (!signatureCanvas) {
+    return;
+  }
+
+  let snapshot = null;
+  if (preserveDrawing && signaturePadHasInk && signatureCanvas.width && signatureCanvas.height) {
+    snapshot = document.createElement("canvas");
+    snapshot.width = signatureCanvas.width;
+    snapshot.height = signatureCanvas.height;
+    const snapshotContext = snapshot.getContext("2d");
+    snapshotContext?.drawImage(signatureCanvas, 0, 0);
+  }
+
+  const shellWidth = signatureCanvas.parentElement?.clientWidth || 640;
+  const cssWidth = Math.max(280, Math.floor(shellWidth));
+  const computedHeight = Number.parseFloat(window.getComputedStyle(signatureCanvas).height);
+  const cssHeight =
+    Number.isFinite(computedHeight) && computedHeight > 0
+      ? Math.round(computedHeight)
+      : SIGNATURE_CANVAS_HEIGHT;
+  const scale = Math.max(window.devicePixelRatio || 1, 1);
+
+  signatureCanvas.width = Math.floor(cssWidth * scale);
+  signatureCanvas.height = Math.floor(cssHeight * scale);
+  signatureCanvas.style.width = `${cssWidth}px`;
+  signatureCanvas.style.height = `${cssHeight}px`;
+
+  signaturePadContext = signatureCanvas.getContext("2d");
+  if (!signaturePadContext) {
+    return;
+  }
+
+  signaturePadContext.setTransform(scale, 0, 0, scale, 0, 0);
+  signaturePadContext.lineCap = "round";
+  signaturePadContext.lineJoin = "round";
+  signaturePadContext.lineWidth = SIGNATURE_PAD_LINE_WIDTH;
+  signaturePadContext.strokeStyle = "#1858bf";
+  signaturePadContext.clearRect(0, 0, cssWidth, cssHeight);
+
+  if (snapshot) {
+    signaturePadContext.drawImage(snapshot, 0, 0, cssWidth, cssHeight);
+    signaturePadHasInk = true;
+  } else if (!preserveDrawing) {
+    signaturePadHasInk = false;
+  }
+}
+
+function getSignatureCanvasContext() {
+  if (!signaturePadContext) {
+    resizeSignatureCanvas(false);
+  }
+  return signaturePadContext;
+}
+
+function clearSignatureCanvas() {
+  const context = getSignatureCanvasContext();
+  if (!context || !signatureCanvas) {
+    return;
+  }
+
+  const bounds = signatureCanvas.getBoundingClientRect();
+  context.clearRect(0, 0, bounds.width, bounds.height);
+  signaturePadHasInk = false;
+  signatureDraftState.imageDataUrl = "";
+  renderComposeStage();
+}
+
+function drawSignatureImageToCanvas(dataUrl) {
+  if (!dataUrl) {
+    clearSignatureCanvas();
+    return;
+  }
+
+  const context = getSignatureCanvasContext();
+  if (!context || !signatureCanvas) {
+    return;
+  }
+
+  const image = new Image();
+  image.onload = () => {
+    const bounds = signatureCanvas.getBoundingClientRect();
+    context.clearRect(0, 0, bounds.width, bounds.height);
+    context.drawImage(image, 0, 0, bounds.width, bounds.height);
+    signaturePadHasInk = true;
+  };
+  image.onerror = () => {
+    clearSignatureCanvas();
+  };
+  image.src = dataUrl;
+}
+
+function handleSignaturePointerDown(event) {
+  if (!signatureCanvas || signatureModal?.hidden) {
+    return;
+  }
+  if (event.pointerType === "mouse" && event.button !== 0) {
+    return;
+  }
+
+  const context = getSignatureCanvasContext();
+  if (!context) {
+    return;
+  }
+
+  event.preventDefault();
+  signatureCanvas.setPointerCapture?.(event.pointerId);
+  const point = getSignatureCanvasPoint(event);
+  context.beginPath();
+  context.moveTo(point.x, point.y);
+  context.lineTo(point.x + 0.01, point.y + 0.01);
+  context.stroke();
+
+  signaturePadDrawing = true;
+  signaturePadHasInk = true;
+}
+
+function handleSignaturePointerMove(event) {
+  if (!signaturePadDrawing || !signatureCanvas) {
+    return;
+  }
+
+  const context = getSignatureCanvasContext();
+  if (!context) {
+    return;
+  }
+
+  event.preventDefault();
+  const point = getSignatureCanvasPoint(event);
+  context.lineTo(point.x, point.y);
+  context.stroke();
+}
+
+function handleSignaturePointerUp(event) {
+  if (!signaturePadDrawing || !signatureCanvas) {
+    return;
+  }
+
+  signaturePadDrawing = false;
+  signatureCanvas.releasePointerCapture?.(event.pointerId);
+  syncDraftSignatureFromCanvas();
+}
+
+function getSignatureCanvasPoint(event) {
+  const bounds = signatureCanvas.getBoundingClientRect();
+  return {
+    x: event.clientX - bounds.left,
+    y: event.clientY - bounds.top
+  };
+}
+
+function setupSignatureComposeDragging() {
+  if (!signatureComposeStage) {
+    return;
+  }
+
+  signatureComposeStage.addEventListener("pointerdown", startSignatureObjectDrag);
+  signatureComposeStage.addEventListener("pointermove", updateSignatureObjectDrag);
+  signatureComposeStage.addEventListener("pointerup", stopSignatureObjectDrag);
+  signatureComposeStage.addEventListener("pointercancel", stopSignatureObjectDrag);
+  signatureComposeStage.addEventListener("pointerleave", stopSignatureObjectDrag);
+}
+
+function startSignatureObjectDrag(event) {
+  if (!signatureComposeStage || signatureModal?.hidden) {
+    return;
+  }
+  if (event.pointerType === "mouse" && event.button !== 0) {
+    return;
+  }
+
+  const dragElement = event.target.closest("[data-drag-target]");
+  if (!dragElement || !signatureComposeStage.contains(dragElement)) {
+    return;
+  }
+
+  const target = dragElement.getAttribute("data-drag-target");
+  if (target !== "signature" && target !== "stamp") {
+    return;
+  }
+
+  event.preventDefault();
+  signatureComposeStage.setPointerCapture?.(event.pointerId);
+  signatureDragState = {
+    pointerId: event.pointerId,
+    target,
+    element: dragElement,
+    startX: event.clientX,
+    startY: event.clientY,
+    origin: {
+      x: signatureDraftState.layout[target].x,
+      y: signatureDraftState.layout[target].y
+    }
+  };
+  dragElement.classList.add("is-dragging");
+}
+
+function updateSignatureObjectDrag(event) {
+  if (!signatureDragState || event.pointerId !== signatureDragState.pointerId || !signatureComposeStage) {
+    return;
+  }
+
+  const rect = signatureComposeStage.getBoundingClientRect();
+  if (!rect.width || !rect.height) {
+    return;
+  }
+
+  event.preventDefault();
+  const dx = (event.clientX - signatureDragState.startX) / rect.width;
+  const dy = (event.clientY - signatureDragState.startY) / rect.height;
+  const target = signatureDragState.target;
+  const element = target === "signature" ? signatureComposeImage : signatureComposeStamp;
+  const nextPosition = clampStageLayoutPosition(
+    signatureComposeStage,
+    element,
+    {
+      x: signatureDragState.origin.x + dx,
+      y: signatureDragState.origin.y + dy
+    }
+  );
+
+  signatureDraftState.layout[target] = nextPosition;
+  setStageObjectPosition(element, nextPosition);
+}
+
+function stopSignatureObjectDrag(event) {
+  if (!signatureDragState) {
+    return;
+  }
+  if (event.pointerId !== undefined && event.pointerId !== signatureDragState.pointerId) {
+    return;
+  }
+
+  signatureDragState.element?.classList.remove("is-dragging");
+  signatureComposeStage?.releasePointerCapture?.(signatureDragState.pointerId);
+  signatureDragState = null;
+}
+
+function renderComposeStage() {
+  renderStampLines(signatureComposeStamp, signatureDraftState.stampLines);
+
+  if (signatureComposeImage) {
+    if (signatureDraftState.imageDataUrl) {
+      signatureComposeImage.src = signatureDraftState.imageDataUrl;
+      signatureComposeImage.hidden = false;
+    } else {
+      signatureComposeImage.hidden = true;
+      signatureComposeImage.removeAttribute("src");
+    }
+    signatureDraftState.layout.signature = setStageObjectPosition(
+      signatureComposeImage,
+      signatureDraftState.layout.signature
+    );
+  }
+
+  signatureDraftState.layout.stamp = setStageObjectPosition(
+    signatureComposeStamp,
+    signatureDraftState.layout.stamp
+  );
+}
+
+function renderSavedSignatureAndStamp() {
+  renderStampLines(previewStamp, signatureState.stampLines);
+
+  if (previewSignatureImage) {
+    if (signatureState.imageDataUrl) {
+      previewSignatureImage.src = signatureState.imageDataUrl;
+      previewSignatureImage.hidden = false;
+    } else {
+      previewSignatureImage.hidden = true;
+      previewSignatureImage.removeAttribute("src");
+    }
+    setStageObjectPosition(previewSignatureImage, signatureState.layout.signature);
+  }
+
+  setStageObjectPosition(previewStamp, signatureState.layout.stamp);
+
+  if (previewSignStage) {
+    previewSignStage.hidden = !(signatureState.imageDataUrl || signatureState.stampLines.length);
+  }
+}
+
+function renderStampLines(container, lines) {
+  if (!container) {
+    return;
+  }
+
+  const normalized = normalizeStampLines(lines);
+  container.innerHTML = "";
+  container.hidden = !normalized.length;
+
+  normalized.forEach((line, index) => {
+    const row = document.createElement("span");
+    row.className = `stamp-line${index === 0 ? " stamp-line-main" : ""}`;
+    row.textContent = line;
+    container.appendChild(row);
+  });
+}
+
+function setStageObjectPosition(element, position) {
+  if (!element) {
+    return { x: 0.5, y: 0.5 };
+  }
+
+  const stage = element.closest(".pm-sign-stage");
+  const normalized = clampStageLayoutPosition(stage, element, position);
+  const x = normalized.x;
+  const y = normalized.y;
+  element.style.left = `${(x * 100).toFixed(2)}%`;
+  element.style.top = `${(y * 100).toFixed(2)}%`;
+  return normalized;
+}
+
+function clampStageLayoutPosition(stage, element, position) {
+  const bounds = getStageLayoutBounds(stage, element);
+  return {
+    x: clamp(position?.x ?? 0.5, bounds.minX, bounds.maxX),
+    y: clamp(position?.y ?? 0.5, bounds.minY, bounds.maxY)
+  };
+}
+
+function getStageLayoutBounds(stage, element) {
+  const fallback = {
+    minX: SIGNATURE_STAGE_PADDING_RATIO_X,
+    maxX: 1 - SIGNATURE_STAGE_PADDING_RATIO_X,
+    minY: SIGNATURE_STAGE_PADDING_RATIO_Y,
+    maxY: 1 - SIGNATURE_STAGE_PADDING_RATIO_Y
+  };
+
+  if (!stage || !element || element.hidden) {
+    return fallback;
+  }
+
+  const stageRect = stage.getBoundingClientRect();
+  const elementRect = element.getBoundingClientRect();
+  if (!stageRect.width || !stageRect.height || !elementRect.width || !elementRect.height) {
+    return fallback;
+  }
+
+  const halfWidthRatio = clamp(elementRect.width / stageRect.width / 2, 0, 0.5);
+  const halfHeightRatio = clamp(elementRect.height / stageRect.height / 2, 0, 0.5);
+
+  let minX = halfWidthRatio + SIGNATURE_STAGE_PADDING_RATIO_X;
+  let maxX = 1 - halfWidthRatio - SIGNATURE_STAGE_PADDING_RATIO_X;
+  let minY = halfHeightRatio + SIGNATURE_STAGE_PADDING_RATIO_Y;
+  let maxY = 1 - halfHeightRatio - SIGNATURE_STAGE_PADDING_RATIO_Y;
+
+  minX = clamp(minX, 0, 1);
+  maxX = clamp(maxX, minX, 1);
+  minY = clamp(minY, 0, 1);
+  maxY = clamp(maxY, minY, 1);
+
+  return { minX, maxX, minY, maxY };
+}
+
+function setSignatureModalMessage(text, isError = false) {
+  if (!signatureModalMessage) {
+    return;
+  }
+
+  signatureModalMessage.textContent = text;
+  signatureModalMessage.classList.toggle("is-error", Boolean(text) && isError);
 }
 
 function schedulePlaceCaseResolution(immediate = false) {
@@ -358,8 +910,14 @@ function setupSubjectLookup(prefix) {
 
   let searchTimer = null;
   let requestId = 0;
+  const clearRegistryMeta = () => {
+    if (subjectLookupMeta[prefix]) {
+      subjectLookupMeta[prefix].dic = "";
+    }
+  };
 
   name.addEventListener("input", () => {
+    clearRegistryMeta();
     const query = name.value.trim();
     clearTimeout(searchTimer);
     hideSuggestions(suggestions);
@@ -381,13 +939,16 @@ function setupSubjectLookup(prefix) {
         suggestions,
         items: found,
         onSelect: (item) => {
-          applySubject(item, { id, name, address });
+          applySubject(item, { id, name, address }, prefix);
           hideSuggestions(suggestions);
           updatePreview();
         }
       });
     }, 260);
   });
+
+  id.addEventListener("input", clearRegistryMeta);
+  address.addEventListener("input", clearRegistryMeta);
 
   id.addEventListener("blur", async () => {
     const ico = extractIcoCandidate(id.value);
@@ -400,7 +961,7 @@ function setupSubjectLookup(prefix) {
       return;
     }
 
-    applySubject(detail, { id, name, address });
+    applySubject(detail, { id, name, address }, prefix);
     updatePreview();
   });
 
@@ -453,12 +1014,16 @@ async function fetchByIco(ico) {
   }
 }
 
-function applySubject(subject, refs) {
+function applySubject(subject, refs, prefix = "") {
   refs.name.value = subject.obchodniJmeno || refs.name.value || "";
   refs.address.value = formatAddress(subject.sidlo) || refs.address.value || "";
 
   if (subject.ico) {
     refs.id.value = subject.ico;
+  }
+
+  if (prefix && subjectLookupMeta[prefix]) {
+    subjectLookupMeta[prefix].dic = normalizeDic(subject?.dic);
   }
 }
 
@@ -602,6 +1167,63 @@ function formatPostCode(text) {
   return text.replace(/\b(\d{3})(\d{2})\b/g, "$1 $2");
 }
 
+function buildStampLinesFromGrantor() {
+  const lines = [];
+  const grantorName = fields.grantorName.value.trim();
+  if (grantorName) {
+    lines.push(grantorName);
+  }
+
+  splitAddressForStamp(fields.grantorAddress.value).forEach((line) => {
+    lines.push(line);
+  });
+
+  const identityParts = [];
+  const ico = extractIcoCandidate(fields.grantorId.value);
+  if (ico) {
+    identityParts.push(`IČ: ${ico}`);
+  }
+
+  const dic = getGrantorDicFromRegistry();
+  if (dic) {
+    identityParts.push(`DIČ: ${dic}`);
+  }
+
+  if (identityParts.length) {
+    lines.push(identityParts.join(" "));
+  }
+
+  return normalizeStampLines(lines);
+}
+
+function splitAddressForStamp(rawAddress) {
+  const segments = String(rawAddress || "")
+    .split(",")
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  if (segments.length <= 1) {
+    return segments;
+  }
+
+  return [segments[0], segments.slice(1).join(", ")];
+}
+
+function getGrantorDicFromRegistry() {
+  const registryDic = normalizeDic(subjectLookupMeta.grantor?.dic);
+  if (!registryDic) {
+    return "";
+  }
+
+  const currentIco = extractIcoCandidate(fields.grantorId.value);
+  if (!currentIco) {
+    return registryDic;
+  }
+
+  const registryIcoPart = registryDic.replace(/^CZ/i, "");
+  return registryIcoPart === currentIco ? registryDic : "";
+}
+
 function updatePreview() {
   setText("previewGrantorName", valueOrBlank(fields.grantorName.value));
   setText("previewGrantorId", valueOrBlank(fields.grantorId.value));
@@ -652,14 +1274,15 @@ function updatePreview() {
     const li = document.createElement("li");
     li.textContent = "....................................";
     actionsList.appendChild(li);
-    return;
+  } else {
+    selectedActions.forEach((action) => {
+      const li = document.createElement("li");
+      li.textContent = action;
+      actionsList.appendChild(li);
+    });
   }
 
-  selectedActions.forEach((action) => {
-    const li = document.createElement("li");
-    li.textContent = action;
-    actionsList.appendChild(li);
-  });
+  renderSavedSignatureAndStamp();
 }
 
 function getSelectedActions() {
@@ -698,6 +1321,9 @@ async function handlePdfDownload() {
   const filename = `PM_prevod_vozidla_${vinPart}_${datePart}.pdf`;
 
   downloadPdfBtn.disabled = true;
+  if (signPowerBtn) {
+    signPowerBtn.disabled = true;
+  }
   setMessage("Generuji PDF...");
 
   try {
@@ -709,6 +1335,9 @@ async function handlePdfDownload() {
     setMessage("Vytvoření PDF se nezdařilo. Zkuste to znovu.", true);
   } finally {
     downloadPdfBtn.disabled = false;
+    if (signPowerBtn) {
+      signPowerBtn.disabled = false;
+    }
   }
 }
 
@@ -832,9 +1461,16 @@ async function buildTextPdf() {
   drawLabeledValueRow("Číslo karoserie - VIN", fields.vehicleVin.value.trim());
   y += 5;
 
+  const pdfStampLines = normalizeStampLines(signatureState.stampLines);
+  const hasPdfSignature = Boolean(signatureState.imageDataUrl);
+  const hasPdfStamp = pdfStampLines.length > 0;
+  const hasPdfSignatureLayer = hasPdfSignature || hasPdfStamp;
+  const signatureStageHeightMm = hasPdfSignatureLayer ? SIGNATURE_STAGE_HEIGHT_MM : 0;
+  const signatureBottomSpacingMm = hasPdfSignatureLayer ? signatureStageHeightMm + 12 : 20;
+
   drawWrappedParagraph(
     "tato plná moc není ve výše uvedeném rozsahu ničím omezena. Zplnomocnění v plném rozsahu zmocněnec přijímá.",
-    20
+    signatureBottomSpacingMm
   );
 
   const basePlace = normalizePlaceInput(fields.signPlace.value, DEFAULT_SIGN_PLACE);
@@ -878,8 +1514,120 @@ async function buildTextPdf() {
     doc.text(signDateText, leftX, y);
   }
 
-  const signatureLineStartX = pageWidth - marginRight - 66;
-  drawDottedLine(signatureLineStartX, valueEndX, y + 1.2);
+  const signatureLineStartX = pageWidth - marginRight - SIGNATURE_STAGE_WIDTH_MM;
+  const signatureAreaWidth = valueEndX - signatureLineStartX;
+  const signatureLineY = y + 1.2;
+  drawDottedLine(signatureLineStartX, valueEndX, signatureLineY);
+
+  if (hasPdfSignatureLayer) {
+    const stageLeftX = signatureLineStartX;
+    const stageTopY = signatureLineY - signatureStageHeightMm - 0.8;
+    const stageWidthMm = signatureAreaWidth;
+    const stageHeightMm = signatureStageHeightMm;
+
+    if (hasPdfStamp) {
+      const stampLineStepMm = 3.9;
+      const stampMaxWidthMm = stageWidthMm - 3.4;
+      const preparedStampLines = [];
+
+      pdfStampLines.forEach((line, index) => {
+        const isMainLine = index === 0;
+        const fontStyle = isMainLine ? "bold" : "normal";
+        const fontSize = isMainLine ? 10.5 : 9.4;
+        const fitted = fitTextForPdf(doc, line, stampMaxWidthMm, fontStyle, fontSize);
+        if (!fitted) {
+          return;
+        }
+
+        doc.setFont("Arial", fontStyle);
+        doc.setFontSize(fontSize);
+        preparedStampLines.push({
+          text: fitted,
+          fontStyle,
+          fontSize,
+          widthMm: doc.getTextWidth(fitted)
+        });
+      });
+
+      if (preparedStampLines.length) {
+        const stampLayout = signatureState.layout?.stamp || DEFAULT_SIGNATURE_LAYOUT.stamp;
+        const maxStampLineWidthMm = preparedStampLines.reduce((max, line) => Math.max(max, line.widthMm), 0);
+        const stampBlockHeightMm =
+          (preparedStampLines.length - 1) * stampLineStepMm +
+          preparedStampLines[preparedStampLines.length - 1].fontSize * PDF_PT_TO_MM;
+        const stampHalfWidthRatio = clamp((maxStampLineWidthMm / 2 + 0.7) / stageWidthMm, 0, 0.48);
+        const stampHalfHeightRatio = clamp((stampBlockHeightMm / 2 + 0.6) / stageHeightMm, 0, 0.48);
+        const stampCenterXRatio = clamp(
+          stampLayout.x,
+          stampHalfWidthRatio + SIGNATURE_STAGE_PADDING_RATIO_X,
+          1 - stampHalfWidthRatio - SIGNATURE_STAGE_PADDING_RATIO_X
+        );
+        const stampCenterYRatio = clamp(
+          stampLayout.y,
+          stampHalfHeightRatio + SIGNATURE_STAGE_PADDING_RATIO_Y,
+          1 - stampHalfHeightRatio - SIGNATURE_STAGE_PADDING_RATIO_Y
+        );
+        const stampCenterX = stageLeftX + stampCenterXRatio * stageWidthMm;
+        const stampCenterY = stageTopY + stampCenterYRatio * stageHeightMm;
+        const stampBaselineOffsetMm = ((preparedStampLines.length - 1) * stampLineStepMm) / 2;
+        let stampY = stampCenterY - stampBaselineOffsetMm;
+
+        preparedStampLines.forEach((line) => {
+          doc.setFont("Arial", line.fontStyle);
+          doc.setFontSize(line.fontSize);
+          doc.text(line.text, stampCenterX, stampY, { align: "center" });
+          stampY += stampLineStepMm;
+        });
+      }
+
+      doc.setFont("Arial", "normal");
+      doc.setFontSize(12);
+    }
+
+    if (hasPdfSignature) {
+      const signatureLayout = signatureState.layout?.signature || DEFAULT_SIGNATURE_LAYOUT.signature;
+      const signatureAspectRatio = await getImageAspectRatio(signatureState.imageDataUrl, SIGNATURE_STAGE_ASPECT_RATIO);
+      let signatureWidthMm = stageWidthMm * SIGNATURE_IMAGE_WIDTH_RATIO;
+      let signatureHeightMm = signatureWidthMm / signatureAspectRatio;
+
+      const maxSignatureHeightMm = stageHeightMm - 2 * SIGNATURE_STAGE_PADDING_RATIO_Y * stageHeightMm;
+      if (signatureHeightMm > maxSignatureHeightMm) {
+        signatureHeightMm = maxSignatureHeightMm;
+        signatureWidthMm = signatureHeightMm * signatureAspectRatio;
+      }
+
+      const signatureHalfWidthRatio = clamp(signatureWidthMm / stageWidthMm / 2, 0, 0.49);
+      const signatureHalfHeightRatio = clamp(signatureHeightMm / stageHeightMm / 2, 0, 0.49);
+      const signatureCenterXRatio = clamp(
+        signatureLayout.x,
+        signatureHalfWidthRatio + SIGNATURE_STAGE_PADDING_RATIO_X,
+        1 - signatureHalfWidthRatio - SIGNATURE_STAGE_PADDING_RATIO_X
+      );
+      const signatureCenterYRatio = clamp(
+        signatureLayout.y,
+        signatureHalfHeightRatio + SIGNATURE_STAGE_PADDING_RATIO_Y,
+        1 - signatureHalfHeightRatio - SIGNATURE_STAGE_PADDING_RATIO_Y
+      );
+
+      const signatureX = stageLeftX + signatureCenterXRatio * stageWidthMm - signatureWidthMm / 2;
+      const signatureY = stageTopY + signatureCenterYRatio * stageHeightMm - signatureHeightMm / 2;
+
+      try {
+        doc.addImage(
+          signatureState.imageDataUrl,
+          "PNG",
+          signatureX,
+          signatureY,
+          signatureWidthMm,
+          signatureHeightMm,
+          undefined,
+          "FAST"
+        );
+      } catch (_) {
+        // Ignore invalid image data and keep generating the PDF.
+      }
+    }
+  }
 
   doc.setFont("Arial", "italic");
   doc.setFontSize(10.5);
@@ -1078,6 +1826,85 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function normalizeDic(value) {
+  return String(value || "")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+}
+
+function normalizeStampLines(lines) {
+  if (!Array.isArray(lines)) {
+    return [];
+  }
+
+  return lines
+    .map((line) => String(line || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function getImageAspectRatio(dataUrl, fallback = SIGNATURE_STAGE_ASPECT_RATIO) {
+  if (!dataUrl) {
+    return Promise.resolve(fallback);
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const width = Number(image.naturalWidth);
+      const height = Number(image.naturalHeight);
+      if (!width || !height) {
+        resolve(fallback);
+        return;
+      }
+      resolve(width / height);
+    };
+    image.onerror = () => resolve(fallback);
+    image.src = dataUrl;
+  });
+}
+
+function fitTextForPdf(doc, rawText, maxWidth, fontStyle = "normal", fontSize = 9.5) {
+  const text = String(rawText || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  doc.setFont("Arial", fontStyle);
+  doc.setFontSize(fontSize);
+
+  if (doc.getTextWidth(text) <= maxWidth) {
+    return text;
+  }
+
+  let shortened = text;
+  while (shortened.length > 2 && doc.getTextWidth(`${shortened}…`) > maxWidth) {
+    shortened = shortened.slice(0, -1).trimEnd();
+  }
+  return shortened ? `${shortened}…` : "";
+}
+
+function cloneSignatureLayout(layout = DEFAULT_SIGNATURE_LAYOUT) {
+  return {
+    signature: {
+      x: clamp(layout?.signature?.x ?? DEFAULT_SIGNATURE_LAYOUT.signature.x, 0, 1),
+      y: clamp(layout?.signature?.y ?? DEFAULT_SIGNATURE_LAYOUT.signature.y, 0, 1)
+    },
+    stamp: {
+      x: clamp(layout?.stamp?.x ?? DEFAULT_SIGNATURE_LAYOUT.stamp.x, 0, 1),
+      y: clamp(layout?.stamp?.y ?? DEFAULT_SIGNATURE_LAYOUT.stamp.y, 0, 1)
+    }
+  };
+}
+
+function clamp(value, min, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return min;
+  }
+  return Math.min(max, Math.max(min, numeric));
 }
 
 /* ── Datová kostka – VIN lookup ── */

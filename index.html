@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="shortcut icon" href="assets/favicon.svg">
   <title>Plná moc na převod vozidla</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -124,8 +126,9 @@
       </section>
 
       <div class="actions">
-        <button id="downloadPdfBtn" class="btn btn-primary" type="button">Stáhnout PDF</button>
+        <button id="signPowerBtn" class="btn btn-ghost" type="button">Podepsat plnou moc</button>
         <p id="formMessage" class="info" aria-live="polite"></p>
+        <button id="downloadPdfBtn" class="btn btn-primary actions-download" type="button">Stáhnout PDF</button>
       </div>
     </form>
 
@@ -193,6 +196,21 @@
             </span>
           </span>
           <span class="pm-sign-right">
+            <span id="previewSignStage" class="pm-sign-stage" hidden>
+              <span
+                id="previewStamp"
+                class="pm-stamp pm-stamp-layer"
+                data-drag-target="stamp"
+                hidden
+              ></span>
+              <img
+                id="previewSignatureImage"
+                class="pm-signature-image pm-signature-layer"
+                data-drag-target="signature"
+                alt="Podpis zmocnitele"
+                hidden
+              >
+            </span>
             <span class="pm-sign-line"></span>
             <span class="pm-sign-role">(zmocnitel)</span>
           </span>
@@ -201,8 +219,52 @@
     </section>
   </main>
 
+  <div id="signatureModal" class="signature-modal" hidden>
+    <div class="signature-modal-card" role="dialog" aria-modal="true" aria-labelledby="signatureModalTitle">
+      <div class="signature-modal-head">
+        <h2 id="signatureModalTitle">Podepsat plnou moc</h2>
+        <button id="closeSignatureModalBtn" class="signature-modal-close" type="button" aria-label="Zavřít modal">×</button>
+      </div>
+
+      <div class="signature-pad-shell">
+        <canvas id="signatureCanvas" class="signature-canvas" width="640" height="240" aria-label="Pole pro podpis"></canvas>
+        <button id="clearSignatureBtn" class="signature-clear" type="button" aria-label="Smazat podpis">×</button>
+      </div>
+
+      <div class="signature-compose-shell">
+        <p class="signature-compose-title">Umístění podpisu a razítka</p>
+        <div id="signatureComposeStage" class="pm-sign-stage signature-compose-stage">
+          <span
+            id="signatureComposeStamp"
+            class="pm-stamp pm-stamp-layer"
+            data-drag-target="stamp"
+            hidden
+          ></span>
+          <img
+            id="signatureComposeImage"
+            class="pm-signature-image pm-signature-layer signature-compose-image"
+            data-drag-target="signature"
+            alt="Náhled podpisu"
+            hidden
+          >
+        </div>
+        <p class="signature-compose-hint">Tažením upravte pozici podpisu a razítka.</p>
+      </div>
+
+      <p id="signatureModalMessage" class="signature-modal-message" aria-live="polite"></p>
+
+      <div class="signature-modal-actions">
+        <button id="saveSignatureBtn" class="btn btn-primary" type="button">Uložit</button>
+        <button id="generateStampBtn" class="btn btn-ghost" type="button">Vygenerovat razítko</button>
+        <button id="clearStampBtn" class="btn btn-ghost" type="button">Smazat razítko</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script src="assets/fonts/arial-font-data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
+
+

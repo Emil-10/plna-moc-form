@@ -308,6 +308,15 @@ textarea:focus {
   gap: 0.8rem;
 }
 
+.actions .info {
+  flex: 1 1 240px;
+  min-width: 180px;
+}
+
+.actions-download {
+  margin-left: auto;
+}
+
 .btn {
   border: 0;
   border-radius: 12px;
@@ -479,7 +488,45 @@ textarea:focus {
 .pm-sign-right {
   display: grid;
   justify-items: center;
+  align-content: end;
   min-width: 220px;
+  width: min(100%, 230px);
+}
+
+.pm-sign-stage {
+  --signature-stage-ratio: 66 / 24;
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--signature-stage-ratio);
+  margin-bottom: 0.18rem;
+  overflow: hidden;
+  container-type: size;
+}
+
+.pm-signature-image {
+  width: 85%;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  object-fit: contain;
+  filter: contrast(1.08);
+  mix-blend-mode: multiply;
+}
+
+.pm-signature-layer,
+.pm-stamp-layer {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.pm-signature-layer {
+  z-index: 2;
+}
+
+.pm-stamp-layer {
+  z-index: 1;
 }
 
 .pm-sign-line {
@@ -492,6 +539,202 @@ textarea:focus {
   margin-top: 3px;
   font-size: 0.94rem;
   font-style: italic;
+}
+
+.pm-stamp {
+  display: inline-block;
+  max-width: 100%;
+  text-align: center;
+  color: #111;
+  font-size: 0.84rem;
+  white-space: nowrap;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.2);
+  line-height: 1.1;
+  pointer-events: none;
+}
+
+.pm-stamp[hidden] {
+  display: none;
+}
+
+.stamp-line {
+  display: block;
+  font-size: 1em;
+}
+
+.stamp-line-main {
+  font-size: 1.12em;
+  font-weight: 700;
+}
+
+@supports (font-size: 1cqh) {
+  .pm-stamp {
+    font-size: 13.6cqh;
+  }
+}
+
+.pm-sign-stage [data-drag-target] {
+  touch-action: none;
+}
+
+body.modal-open {
+  overflow: hidden;
+}
+
+.signature-modal[hidden] {
+  display: none;
+}
+
+.signature-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(14, 20, 27, 0.48);
+}
+
+.signature-modal-card {
+  width: min(860px, 96vw);
+  border-radius: 14px;
+  border: 1px solid #cfd6de;
+  background: #f6f8fa;
+  box-shadow: 0 22px 48px rgba(8, 16, 27, 0.36);
+  padding: 1rem;
+}
+
+.signature-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 0.55rem;
+}
+
+.signature-modal-head h2 {
+  margin: 0;
+  font-family: "Merriweather", serif;
+  font-size: 1.2rem;
+}
+
+.signature-modal-close {
+  border: 0;
+  background: transparent;
+  color: #425463;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+}
+
+.signature-modal-close:hover,
+.signature-clear:hover {
+  color: #1f2f3d;
+}
+
+.signature-pad-shell {
+  position: relative;
+  border-radius: 10px;
+  border: 1px solid #ccd4dc;
+  min-height: 260px;
+  background: #f2f4f6;
+  overflow: hidden;
+}
+
+.signature-pad-shell::after {
+  content: "";
+  position: absolute;
+  left: 2.8rem;
+  right: 1.1rem;
+  bottom: 2.35rem;
+  border-bottom: 1px solid #d2d8de;
+  pointer-events: none;
+}
+
+.signature-canvas {
+  display: block;
+  width: 100%;
+  height: 240px;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.signature-clear {
+  position: absolute;
+  left: 0.95rem;
+  bottom: 1.7rem;
+  border: 0;
+  background: transparent;
+  color: #4d5f6e;
+  font-size: 1.85rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.08rem 0.3rem;
+}
+
+.signature-compose-shell {
+  margin-top: 0.72rem;
+}
+
+.signature-compose-title {
+  margin: 0 0 0.34rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #2f4254;
+}
+
+.signature-compose-stage {
+  width: min(100%, 460px);
+  margin-inline: auto;
+  aspect-ratio: var(--signature-stage-ratio);
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid #cfd7df;
+  background:
+    linear-gradient(180deg, rgba(252, 252, 252, 0.88), rgba(245, 247, 250, 0.9)),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 26px,
+      rgba(86, 103, 122, 0.07) 26px,
+      rgba(86, 103, 122, 0.07) 27px
+    );
+}
+
+.signature-compose-stage .pm-stamp-layer,
+.signature-compose-stage .pm-signature-layer {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.signature-compose-stage .pm-stamp-layer.is-dragging,
+.signature-compose-stage .pm-signature-layer.is-dragging {
+  cursor: grabbing;
+}
+
+.signature-compose-hint {
+  margin: 0.35rem 0 0;
+  color: #566778;
+  font-size: 0.78rem;
+}
+
+.signature-modal-message {
+  margin: 0.48rem 0 0;
+  min-height: 1.1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.signature-modal-message.is-error {
+  color: var(--danger);
+}
+
+.signature-modal-actions {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
 }
 
 @media (min-width: 840px) {
@@ -575,5 +818,34 @@ textarea:focus {
   .pm-actions li,
   .pm-signature {
     font-size: 0.92rem;
+  }
+
+  .signature-modal-card {
+    width: min(96vw, 760px);
+    padding: 0.82rem;
+  }
+
+  .signature-pad-shell {
+    min-height: 230px;
+  }
+
+  .signature-canvas {
+    height: 210px;
+  }
+
+  .signature-compose-stage {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .actions .info {
+    order: 3;
+    flex-basis: 100%;
+    min-width: 100%;
+  }
+
+  .signature-modal-actions .btn {
+    flex: 1 1 100%;
   }
 }
