@@ -74,6 +74,14 @@
         <h2>Vozidlo</h2>
         <div class="grid-two">
           <div class="field">
+            <label for="vehicleVin">VIN</label>
+            <input id="vehicleVin" type="text" maxlength="17" pattern="[A-HJ-NPR-Z0-9]{17}" required>
+          </div>
+          <div class="field">
+            <label for="vehicleSpz">SPZ/RZ (nepovinné)</label>
+            <input id="vehicleSpz" type="text" maxlength="10" placeholder="Např. 1AB2345">
+          </div>
+          <div class="field">
             <label for="vehicleBrand">Značka</label>
             <input id="vehicleBrand" type="text" required>
           </div>
@@ -81,15 +89,8 @@
             <label for="vehicleModel">Model</label>
             <input id="vehicleModel" type="text" required>
           </div>
-          <div class="field">
-            <label for="vehicleSpz">SPZ/RZ (nepovinné)</label>
-            <input id="vehicleSpz" type="text" maxlength="10" placeholder="Např. 1AB2345">
-          </div>
-          <div class="field">
-            <label for="vehicleVin">VIN</label>
-            <input id="vehicleVin" type="text" maxlength="17" pattern="[A-HJ-NPR-Z0-9]{17}" required>
-          </div>
         </div>
+        <p id="vinLookupMessage" class="hint" aria-live="polite"></p>
       </section>
 
       <section class="card">
