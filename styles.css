@@ -542,6 +542,7 @@ textarea:focus {
   display: none;
 }
 
+
 @media (max-width: 780px) {
   .layout {
     width: min(100vw - 1.1rem, 1180px);

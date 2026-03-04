@@ -2,5 +2,7 @@
 Thumbs.db
 
 .playwright-cli/
+.dev.vars
+node_modules/
 
 *.log

@@ -1,6 +1,10 @@
 const ARES_BASE = "https://ares.gov.cz/ekonomicke-subjekty-v-be/rest";
 const MORPHODITA_BASE = "https://lindat.mff.cuni.cz/services/morphodita/api";
 const MORPHODITA_MODEL = "czech-morfflex2.1-pdtc2.0-250909";
+const DK_VIN_PROXY = "/api/vin";
+const DK_TIMEOUT_MS = 8000;
+const VIN_LENGTH = 17;
+const VIN_AUTO_LOOKUP_DELAY_MS = 450;
 const DEFAULT_SIGN_PLACE = "Praha";
 const DEFAULT_SIGN_PLACE_LOCATIVE = "Praze";
 const MORPHODITA_TIMEOUT_MS = 3200;
@@ -26,6 +30,9 @@ let placeCaseState = {
 };
 let placeCaseResolveTimer = null;
 let placeCaseResolveRequestId = 0;
+let vinAutoLookupTimer = null;
+let vinLookupInFlightVin = "";
+let vinLookupLastSuccessfulVin = "";
 placeCaseCache.set(DEFAULT_SIGN_PLACE.toLocaleLowerCase("cs-CZ"), {
   mode: "declined",
   basePlace: DEFAULT_SIGN_PLACE,
@@ -58,8 +65,12 @@ function initialize() {
   setupSubjectLookup("attorney");
 
   fields.vehicleVin.addEventListener("input", () => {
-    fields.vehicleVin.value = sanitizeVin(fields.vehicleVin.value);
+    const sanitized = sanitizeVin(fields.vehicleVin.value);
+    fields.vehicleVin.value = sanitized;
+    setVinCustomValidity(sanitized);
+    scheduleAutoVinLookup();
   });
+  setVinCustomValidity(fields.vehicleVin.value.trim());
   fields.vehicleSpz.addEventListener("input", () => {
     fields.vehicleSpz.value = sanitizeSpz(fields.vehicleSpz.value);
   });
@@ -682,8 +693,9 @@ async function handlePdfDownload() {
     return;
   }
 
-  const fileDate = fields.signDate.value.replace(/\./g, "-");
-  const filename = `plna-moc-prevod-vozidla-${fileDate || "dokument"}.pdf`;
+  const vinPart = sanitizeVin(fields.vehicleVin.value) || "VINnumber";
+  const datePart = isValidDate(fields.signDate.value) ? fields.signDate.value : formatDate(new Date());
+  const filename = `PM_prevod_vozidla_${vinPart}_${datePart}.pdf`;
 
   downloadPdfBtn.disabled = true;
   setMessage("Generuji PDF...");
@@ -1022,7 +1034,7 @@ function extractIcoCandidate(value) {
 }
 
 function sanitizeVin(value) {
-  return value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, "").slice(0, 17);
+  return value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, "").slice(0, VIN_LENGTH);
 }
 
 function sanitizeSpz(value) {
@@ -1066,4 +1078,141 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+/* ── Datová kostka – VIN lookup ── */
+
+function setVinCustomValidity(vin) {
+  if (vin && vin.length !== VIN_LENGTH) {
+    fields.vehicleVin.setCustomValidity(`VIN musí mít přesně ${VIN_LENGTH} znaků.`);
+    return;
+  }
+  fields.vehicleVin.setCustomValidity("");
+}
+
+function scheduleAutoVinLookup() {
+  clearTimeout(vinAutoLookupTimer);
+
+  const vin = fields.vehicleVin.value.trim();
+  if (!vin) {
+    vinLookupLastSuccessfulVin = "";
+    setVinLookupMessage("");
+    return;
+  }
+
+  if (vin.length !== VIN_LENGTH) {
+    setVinLookupMessage("");
+    return;
+  }
+
+  if (vin === vinLookupLastSuccessfulVin || vin === vinLookupInFlightVin) {
+    return;
+  }
+
+  vinAutoLookupTimer = setTimeout(() => {
+    handleVinLookup({ auto: true, focusOnInvalid: false });
+  }, VIN_AUTO_LOOKUP_DELAY_MS);
+}
+
+async function handleVinLookup({ auto = false, focusOnInvalid = true } = {}) {
+  const vin = fields.vehicleVin.value.trim();
+  if (vin.length !== VIN_LENGTH) {
+    if (!auto) {
+      setVinLookupMessage(`VIN musí mít přesně ${VIN_LENGTH} znaků.`, true);
+    }
+    if (focusOnInvalid) {
+      fields.vehicleVin.focus();
+    }
+    return;
+  }
+  if (window.location.protocol === "file:") {
+    setVinLookupMessage("Pro načítání z registru otevřete aplikaci přes Pages URL (např. http://127.0.0.1:8788), ne jako file://.", true);
+    return;
+  }
+
+  vinLookupInFlightVin = vin;
+  setVinLookupMessage(auto ? "Ověřuji VIN…" : "Načítám data o vozidle…");
+
+  try {
+    const data = await fetchVehicleByVin(vin);
+    if (fields.vehicleVin.value.trim() !== vin) {
+      return;
+    }
+    if (!data) {
+      setVinLookupMessage("Vozidlo nebylo nalezeno nebo nastala chyba.", true);
+      return;
+    }
+
+    if (data.TovarniZnacka) {
+      fields.vehicleBrand.value = titleCaseCs(data.TovarniZnacka);
+    }
+    if (data.ObchodniOznaceni) {
+      fields.vehicleModel.value = titleCaseCs(data.ObchodniOznaceni);
+    }
+    vinLookupLastSuccessfulVin = vin;
+
+    updatePreview();
+    setVinLookupMessage("Data o vozidle načtena z registru.");
+  } catch (error) {
+    const detail = String(error?.message || "").trim();
+    setVinLookupMessage(detail ? `Načtení dat se nezdařilo: ${detail}` : "Načtení dat se nezdařilo.", true);
+  } finally {
+    if (vinLookupInFlightVin === vin) {
+      vinLookupInFlightVin = "";
+    }
+  }
+}
+
+async function fetchVehicleByVin(vin) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DK_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${DK_VIN_PROXY}?vin=${encodeURIComponent(vin)}`, {
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      let detail = "";
+      try {
+        const errorPayload = await response.json();
+        detail = String(errorPayload?.error || errorPayload?.message || "");
+      } catch (_) {
+        // ignore parse issues
+      }
+      throw new Error(detail || `HTTP ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (result.Status !== 1 || !result.Data) {
+      return null;
+    }
+
+    return result.Data;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("Vypršel časový limit dotazu.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function titleCaseCs(text) {
+  if (!text) {
+    return "";
+  }
+  return text
+    .toLocaleLowerCase("cs-CZ")
+    .replace(/(^|[\s-])\S/g, (match) => match.toLocaleUpperCase("cs-CZ"));
+}
+
+function setVinLookupMessage(text, isError = false) {
+  const el = document.getElementById("vinLookupMessage");
+  if (!el) {
+    return;
+  }
+  el.textContent = text;
+  el.style.color = isError ? "var(--danger)" : "";
 }
