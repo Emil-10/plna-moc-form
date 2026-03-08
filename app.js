@@ -26,6 +26,7 @@ const saveSignatureBtn = document.getElementById("saveSignatureBtn");
 const generateStampBtn = document.getElementById("generateStampBtn");
 const clearStampBtn = document.getElementById("clearStampBtn");
 const signatureModalMessage = document.getElementById("signatureModalMessage");
+const signatureModalBody = document.getElementById("signatureModalBody");
 const previewSignStage = document.getElementById("previewSignStage");
 const previewSignatureImage = document.getElementById("previewSignatureImage");
 const previewStamp = document.getElementById("previewStamp");
@@ -45,9 +46,15 @@ const SIGNATURE_STAGE_ASPECT_RATIO = SIGNATURE_STAGE_WIDTH_MM / SIGNATURE_STAGE_
 const SIGNATURE_IMAGE_WIDTH_RATIO = 0.85;
 const SIGNATURE_STAGE_PADDING_RATIO_X = 0.01;
 const SIGNATURE_STAGE_PADDING_RATIO_Y = 0.01;
+const SIGNATURE_EXPORT_PADDING_PX = 8;
+const STAMP_SCALE = 1.2;
 const DEFAULT_SIGNATURE_LAYOUT = Object.freeze({
   signature: { x: 0.54, y: 0.44 },
   stamp: { x: 0.54, y: 0.66 }
+});
+const DEFAULT_SIGNATURE_SIZE = Object.freeze({
+  widthRatio: 0.32,
+  heightRatio: 0.18
 });
 let arialFontPromise = null;
 let signaturePadContext = null;
@@ -55,15 +62,18 @@ let signaturePadDrawing = false;
 let signaturePadHasInk = false;
 let signatureResizeTimer = null;
 let signatureDragState = null;
+let signatureInkBounds = null;
 const signatureState = {
   imageDataUrl: "",
   stampLines: [],
-  layout: cloneSignatureLayout()
+  layout: cloneSignatureLayout(),
+  size: cloneSignatureSize()
 };
 const signatureDraftState = {
   imageDataUrl: "",
   stampLines: [],
-  layout: cloneSignatureLayout()
+  layout: cloneSignatureLayout(),
+  size: cloneSignatureSize()
 };
 const subjectLookupMeta = {
   grantor: { dic: "" },
@@ -169,12 +179,11 @@ function setupSignatureModal() {
   signPowerBtn.addEventListener("click", openSignatureModal);
   closeSignatureModalBtn?.addEventListener("click", closeSignatureModal);
   clearSignatureBtn?.addEventListener("click", () => {
-    clearSignatureCanvas();
-    setSignatureModalMessage("");
+    clearSignatureWorkspace();
+    setSignatureModalMessage("Podpis i razítko byly smazány.");
   });
   saveSignatureBtn?.addEventListener("click", saveSignatureFromModal);
   generateStampBtn?.addEventListener("click", generateStampInModal);
-  clearStampBtn?.addEventListener("click", clearStampInModal);
 
   signatureCanvas.addEventListener("pointerdown", handleSignaturePointerDown);
   signatureCanvas.addEventListener("pointermove", handleSignaturePointerMove);
@@ -216,19 +225,21 @@ function openSignatureModal() {
   signatureDraftState.imageDataUrl = signatureState.imageDataUrl;
   signatureDraftState.stampLines = [...signatureState.stampLines];
   signatureDraftState.layout = cloneSignatureLayout(signatureState.layout);
+  signatureDraftState.size = cloneSignatureSize(signatureState.size);
 
   signatureModal.hidden = false;
   document.body.classList.add("modal-open");
+  if (signatureModalBody) {
+    signatureModalBody.scrollTop = 0;
+  }
   setSignatureModalMessage("");
   renderComposeStage();
 
   requestAnimationFrame(() => {
     resizeSignatureCanvas(false);
-    if (signatureDraftState.imageDataUrl) {
-      drawSignatureImageToCanvas(signatureDraftState.imageDataUrl);
-    } else {
-      clearSignatureCanvas();
-    }
+    clearSignatureCanvasSurface();
+    signaturePadHasInk = false;
+    renderComposeStage();
   });
 }
 
@@ -248,6 +259,7 @@ function saveSignatureFromModal() {
   signatureState.imageDataUrl = signatureDraftState.imageDataUrl;
   signatureState.stampLines = normalizeStampLines(signatureDraftState.stampLines);
   signatureState.layout = cloneSignatureLayout(signatureDraftState.layout);
+  signatureState.size = cloneSignatureSize(signatureDraftState.size);
 
   closeSignatureModal();
   updatePreview();
@@ -297,7 +309,17 @@ function syncDraftSignatureFromCanvas() {
     return;
   }
 
-  signatureDraftState.imageDataUrl = signaturePadHasInk ? signatureCanvas.toDataURL("image/png") : "";
+  if (!signaturePadHasInk) {
+    renderComposeStage();
+    return;
+  }
+
+  const exportedSignature = exportTrimmedSignatureImageData();
+  signatureDraftState.imageDataUrl = exportedSignature?.dataUrl || "";
+  signatureDraftState.size = cloneSignatureSize(exportedSignature?.size);
+  clearSignatureCanvasSurface();
+  signaturePadHasInk = false;
+  signatureInkBounds = null;
   renderComposeStage();
 }
 
@@ -346,6 +368,7 @@ function resizeSignatureCanvas(preserveDrawing) {
     signaturePadHasInk = true;
   } else if (!preserveDrawing) {
     signaturePadHasInk = false;
+    signatureInkBounds = null;
   }
 }
 
@@ -356,7 +379,18 @@ function getSignatureCanvasContext() {
   return signaturePadContext;
 }
 
-function clearSignatureCanvas() {
+function clearSignatureWorkspace() {
+  signatureDraftState.imageDataUrl = "";
+  signatureDraftState.stampLines = [];
+  signatureDraftState.layout = cloneSignatureLayout();
+  signatureDraftState.size = cloneSignatureSize();
+  clearSignatureCanvasSurface();
+  signaturePadHasInk = false;
+  signatureInkBounds = null;
+  renderComposeStage();
+}
+
+function clearSignatureCanvasSurface() {
   const context = getSignatureCanvasContext();
   if (!context || !signatureCanvas) {
     return;
@@ -364,14 +398,11 @@ function clearSignatureCanvas() {
 
   const bounds = signatureCanvas.getBoundingClientRect();
   context.clearRect(0, 0, bounds.width, bounds.height);
-  signaturePadHasInk = false;
-  signatureDraftState.imageDataUrl = "";
-  renderComposeStage();
 }
 
 function drawSignatureImageToCanvas(dataUrl) {
   if (!dataUrl) {
-    clearSignatureCanvas();
+    clearSignatureCanvasSurface();
     return;
   }
 
@@ -388,13 +419,13 @@ function drawSignatureImageToCanvas(dataUrl) {
     signaturePadHasInk = true;
   };
   image.onerror = () => {
-    clearSignatureCanvas();
+    clearSignatureCanvasSurface();
   };
   image.src = dataUrl;
 }
 
 function handleSignaturePointerDown(event) {
-  if (!signatureCanvas || signatureModal?.hidden) {
+  if (!signatureCanvas || signatureModal?.hidden || signatureDraftState.imageDataUrl) {
     return;
   }
   if (event.pointerType === "mouse" && event.button !== 0) {
@@ -409,6 +440,7 @@ function handleSignaturePointerDown(event) {
   event.preventDefault();
   signatureCanvas.setPointerCapture?.(event.pointerId);
   const point = getSignatureCanvasPoint(event);
+  updateSignatureInkBounds(point.x, point.y);
   context.beginPath();
   context.moveTo(point.x, point.y);
   context.lineTo(point.x + 0.01, point.y + 0.01);
@@ -430,6 +462,7 @@ function handleSignaturePointerMove(event) {
 
   event.preventDefault();
   const point = getSignatureCanvasPoint(event);
+  updateSignatureInkBounds(point.x, point.y);
   context.lineTo(point.x, point.y);
   context.stroke();
 }
@@ -449,6 +482,82 @@ function getSignatureCanvasPoint(event) {
   return {
     x: event.clientX - bounds.left,
     y: event.clientY - bounds.top
+  };
+}
+
+function updateSignatureInkBounds(x, y) {
+  const halfLineWidth = SIGNATURE_PAD_LINE_WIDTH * 0.5 + 1.2;
+  const minX = x - halfLineWidth;
+  const maxX = x + halfLineWidth;
+  const minY = y - halfLineWidth;
+  const maxY = y + halfLineWidth;
+
+  if (!signatureInkBounds) {
+    signatureInkBounds = { minX, maxX, minY, maxY };
+    return;
+  }
+
+  signatureInkBounds.minX = Math.min(signatureInkBounds.minX, minX);
+  signatureInkBounds.maxX = Math.max(signatureInkBounds.maxX, maxX);
+  signatureInkBounds.minY = Math.min(signatureInkBounds.minY, minY);
+  signatureInkBounds.maxY = Math.max(signatureInkBounds.maxY, maxY);
+}
+
+function exportTrimmedSignatureImageData() {
+  if (!signatureCanvas || !signatureInkBounds) {
+    return null;
+  }
+
+  const displayWidth = signatureCanvas.clientWidth || signatureCanvas.getBoundingClientRect().width;
+  const displayHeight = signatureCanvas.clientHeight || signatureCanvas.getBoundingClientRect().height;
+  if (!displayWidth || !displayHeight || !signatureCanvas.width || !signatureCanvas.height) {
+    return null;
+  }
+
+  const scaleX = signatureCanvas.width / displayWidth;
+  const scaleY = signatureCanvas.height / displayHeight;
+  const sourceX = Math.max(0, Math.floor((signatureInkBounds.minX - SIGNATURE_EXPORT_PADDING_PX) * scaleX));
+  const sourceY = Math.max(0, Math.floor((signatureInkBounds.minY - SIGNATURE_EXPORT_PADDING_PX) * scaleY));
+  const sourceMaxX = Math.min(
+    signatureCanvas.width,
+    Math.ceil((signatureInkBounds.maxX + SIGNATURE_EXPORT_PADDING_PX) * scaleX)
+  );
+  const sourceMaxY = Math.min(
+    signatureCanvas.height,
+    Math.ceil((signatureInkBounds.maxY + SIGNATURE_EXPORT_PADDING_PX) * scaleY)
+  );
+  const cropWidth = sourceMaxX - sourceX;
+  const cropHeight = sourceMaxY - sourceY;
+
+  if (cropWidth <= 0 || cropHeight <= 0) {
+    return null;
+  }
+
+  const exportCanvas = document.createElement("canvas");
+  exportCanvas.width = cropWidth;
+  exportCanvas.height = cropHeight;
+  const exportContext = exportCanvas.getContext("2d");
+  if (!exportContext) {
+    return null;
+  }
+
+  exportContext.drawImage(
+    signatureCanvas,
+    sourceX,
+    sourceY,
+    cropWidth,
+    cropHeight,
+    0,
+    0,
+    cropWidth,
+    cropHeight
+  );
+  return {
+    dataUrl: exportCanvas.toDataURL("image/png"),
+    size: {
+      widthRatio: clamp(cropWidth / signatureCanvas.width, 0.08, 0.96),
+      heightRatio: clamp(cropHeight / signatureCanvas.height, 0.06, 0.9)
+    }
   };
 }
 
@@ -550,6 +659,7 @@ function renderComposeStage() {
       signatureComposeImage.hidden = true;
       signatureComposeImage.removeAttribute("src");
     }
+    setSignatureImageSize(signatureComposeImage, signatureDraftState.size);
     signatureDraftState.layout.signature = setStageObjectPosition(
       signatureComposeImage,
       signatureDraftState.layout.signature
@@ -560,6 +670,16 @@ function renderComposeStage() {
     signatureComposeStamp,
     signatureDraftState.layout.stamp
   );
+
+  updateSignatureCanvasMode();
+}
+
+function updateSignatureCanvasMode() {
+  if (!signatureCanvas) {
+    return;
+  }
+
+  signatureCanvas.classList.toggle("is-locked", Boolean(signatureDraftState.imageDataUrl));
 }
 
 function renderSavedSignatureAndStamp() {
@@ -573,6 +693,7 @@ function renderSavedSignatureAndStamp() {
       previewSignatureImage.hidden = true;
       previewSignatureImage.removeAttribute("src");
     }
+    setSignatureImageSize(previewSignatureImage, signatureState.size);
     setStageObjectPosition(previewSignatureImage, signatureState.layout.signature);
   }
 
@@ -1526,14 +1647,14 @@ async function buildTextPdf() {
     const stageHeightMm = signatureStageHeightMm;
 
     if (hasPdfStamp) {
-      const stampLineStepMm = 3.9;
+      const stampLineStepMm = 3.9 * STAMP_SCALE;
       const stampMaxWidthMm = stageWidthMm - 3.4;
       const preparedStampLines = [];
 
       pdfStampLines.forEach((line, index) => {
         const isMainLine = index === 0;
         const fontStyle = isMainLine ? "bold" : "normal";
-        const fontSize = isMainLine ? 10.5 : 9.4;
+        const fontSize = (isMainLine ? 10.5 : 9.4) * STAMP_SCALE;
         const fitted = fitTextForPdf(doc, line, stampMaxWidthMm, fontStyle, fontSize);
         if (!fitted) {
           return;
@@ -1586,13 +1707,15 @@ async function buildTextPdf() {
 
     if (hasPdfSignature) {
       const signatureLayout = signatureState.layout?.signature || DEFAULT_SIGNATURE_LAYOUT.signature;
+      const signatureSize = cloneSignatureSize(signatureState.size);
       const signatureAspectRatio = await getImageAspectRatio(signatureState.imageDataUrl, SIGNATURE_STAGE_ASPECT_RATIO);
-      let signatureWidthMm = stageWidthMm * SIGNATURE_IMAGE_WIDTH_RATIO;
+      const signatureBoxWidthMm = stageWidthMm * signatureSize.widthRatio;
+      const signatureBoxHeightMm = stageHeightMm * signatureSize.heightRatio;
+      let signatureWidthMm = signatureBoxWidthMm;
       let signatureHeightMm = signatureWidthMm / signatureAspectRatio;
 
-      const maxSignatureHeightMm = stageHeightMm - 2 * SIGNATURE_STAGE_PADDING_RATIO_Y * stageHeightMm;
-      if (signatureHeightMm > maxSignatureHeightMm) {
-        signatureHeightMm = maxSignatureHeightMm;
+      if (signatureHeightMm > signatureBoxHeightMm) {
+        signatureHeightMm = signatureBoxHeightMm;
         signatureWidthMm = signatureHeightMm * signatureAspectRatio;
       }
 
@@ -1899,6 +2022,13 @@ function cloneSignatureLayout(layout = DEFAULT_SIGNATURE_LAYOUT) {
   };
 }
 
+function cloneSignatureSize(size = DEFAULT_SIGNATURE_SIZE) {
+  return {
+    widthRatio: clamp(size?.widthRatio ?? DEFAULT_SIGNATURE_SIZE.widthRatio, 0.08, 0.96),
+    heightRatio: clamp(size?.heightRatio ?? DEFAULT_SIGNATURE_SIZE.heightRatio, 0.06, 0.9)
+  };
+}
+
 function clamp(value, min, max) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
@@ -1945,7 +2075,7 @@ async function handleVinLookup({ auto = false, focusOnInvalid = true } = {}) {
   const vin = fields.vehicleVin.value.trim();
   if (vin.length !== VIN_LENGTH) {
     if (!auto) {
-      setVinLookupMessage(`VIN musí mít přesně ${VIN_LENGTH} znaků.`, true);
+      setVinLookupMessage(`VIN musí mít přesně ${VIN_LENGTH} znaků.`, "error");
     }
     if (focusOnInvalid) {
       fields.vehicleVin.focus();
@@ -1953,12 +2083,15 @@ async function handleVinLookup({ auto = false, focusOnInvalid = true } = {}) {
     return;
   }
   if (window.location.protocol === "file:") {
-    setVinLookupMessage("Pro načítání z registru otevřete aplikaci přes Pages URL (např. http://127.0.0.1:8788), ne jako file://.", true);
+    setVinLookupMessage(
+      "VIN registr nefunguje při otevření přes file://. Spusťte aplikaci přes Pages/Wrangler, například na http://127.0.0.1:8788/.",
+      "error"
+    );
     return;
   }
 
   vinLookupInFlightVin = vin;
-  setVinLookupMessage(auto ? "Ověřuji VIN…" : "Načítám data o vozidle…");
+  setVinLookupMessage(auto ? "Ověřuji VIN v registru vozidel…" : "Načítám data o vozidle z registru…", "loading");
 
   try {
     const data = await fetchVehicleByVin(vin);
@@ -1966,7 +2099,7 @@ async function handleVinLookup({ auto = false, focusOnInvalid = true } = {}) {
       return;
     }
     if (!data) {
-      setVinLookupMessage("Vozidlo nebylo nalezeno nebo nastala chyba.", true);
+      setVinLookupMessage("Vozidlo nebylo v registru nalezeno nebo registr nevrátil použitelná data.", "error");
       return;
     }
 
@@ -1979,10 +2112,10 @@ async function handleVinLookup({ auto = false, focusOnInvalid = true } = {}) {
     vinLookupLastSuccessfulVin = vin;
 
     updatePreview();
-    setVinLookupMessage("Data o vozidle načtena z registru.");
+    setVinLookupMessage("Data o vozidle byla úspěšně načtena z registru.", "success");
   } catch (error) {
     const detail = String(error?.message || "").trim();
-    setVinLookupMessage(detail ? `Načtení dat se nezdařilo: ${detail}` : "Načtení dat se nezdařilo.", true);
+    setVinLookupMessage(detail ? `Načtení dat se nezdařilo: ${detail}` : "Načtení dat se nezdařilo.", "error");
   } finally {
     if (vinLookupInFlightVin === vin) {
       vinLookupInFlightVin = "";
@@ -2000,13 +2133,23 @@ async function fetchVehicleByVin(vin) {
     });
 
     if (!response.ok) {
+      const contentType = String(response.headers.get("content-type") || "").toLowerCase();
       let detail = "";
-      try {
+      if (contentType.includes("application/json")) {
         const errorPayload = await response.json();
         detail = String(errorPayload?.error || errorPayload?.message || "");
-      } catch (_) {
-        // ignore parse issues
       }
+
+      if (response.status === 404 && !contentType.includes("application/json")) {
+        throw new Error(
+          "Lokální VIN služba na tomto serveru neběží. Při spuštění přes jednoduchý statický server se /api/vin nenačte. Použijte Pages/Wrangler na http://127.0.0.1:8788/."
+        );
+      }
+
+      if (response.status === 404 && !detail) {
+        throw new Error("Vozidlo nebylo v registru nalezeno.");
+      }
+
       throw new Error(detail || `HTTP ${response.status}`);
     }
 
@@ -2035,11 +2178,34 @@ function titleCaseCs(text) {
     .replace(/(^|[\s-])\S/g, (match) => match.toLocaleUpperCase("cs-CZ"));
 }
 
-function setVinLookupMessage(text, isError = false) {
+function setVinLookupMessage(text, tone = "info") {
   const el = document.getElementById("vinLookupMessage");
   if (!el) {
     return;
   }
+
   el.textContent = text;
-  el.style.color = isError ? "var(--danger)" : "";
+  el.classList.remove("is-visible", "is-error", "is-success", "is-loading", "is-info");
+
+  if (!text) {
+    return;
+  }
+
+  const normalizedTone = tone === true ? "error" : tone === false ? "info" : String(tone || "info");
+  el.classList.add("is-visible");
+  el.classList.add(
+    normalizedTone === "error" || normalizedTone === "success" || normalizedTone === "loading"
+      ? `is-${normalizedTone}`
+      : "is-info"
+  );
+}
+
+function setSignatureImageSize(element, size = DEFAULT_SIGNATURE_SIZE) {
+  if (!element) {
+    return;
+  }
+
+  const normalized = cloneSignatureSize(size);
+  element.style.width = `${(normalized.widthRatio * 100).toFixed(2)}%`;
+  element.style.height = `${(normalized.heightRatio * 100).toFixed(2)}%`;
 }
