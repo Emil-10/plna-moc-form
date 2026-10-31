@@ -151,6 +151,7 @@ function initialize() {
   downloadPdfBtn.addEventListener("click", handlePdfDownload);
   setupPreviewToggle();
   setupSignatureModal();
+  setupExclusiveActions();
   setDefaultActionsChecked();
   schedulePlaceCaseResolution(true);
 
@@ -1019,7 +1020,23 @@ function applySourceCasing(sourceToken, inflectedToken) {
 
 function setDefaultActionsChecked() {
   document.querySelectorAll('input[name="actions"]').forEach((checkbox) => {
-    checkbox.checked = true;
+    checkbox.checked = checkbox.dataset.exclusive !== "true";
+  });
+}
+
+// "Změna pouze provozovatele" je samostatná varianta – nelze ji kombinovat s ostatními úkony.
+function setupExclusiveActions() {
+  const checkboxes = Array.from(document.querySelectorAll('input[name="actions"]'));
+  checkboxes.forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      if (!checkbox.checked) return;
+      const isExclusive = checkbox.dataset.exclusive === "true";
+      checkboxes.forEach((other) => {
+        if (other === checkbox) return;
+        if (isExclusive || other.dataset.exclusive === "true") other.checked = false;
+      });
+      actionsError.textContent = "";
+    });
   });
 }
 
@@ -1428,6 +1445,11 @@ async function handlePdfDownload() {
   const selectedActions = getSelectedActions();
   if (!selectedActions.length) {
     actionsError.textContent = "Vyberte alespoň jeden úkon.";
+    return;
+  }
+  const exclusiveChecked = document.querySelector('input[name="actions"][data-exclusive="true"]:checked');
+  if (exclusiveChecked && selectedActions.length > 1) {
+    actionsError.textContent = "Změnu pouze provozovatele nelze kombinovat s jinými úkony.";
     return;
   }
   actionsError.textContent = "";
