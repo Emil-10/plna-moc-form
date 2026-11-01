@@ -1589,7 +1589,7 @@ async function buildTextPdf() {
   doc.text("(dále jako „zmocněnec“)", labelX, y);
   y += 10;
 
-  drawWrappedParagraph("Aby mě v plném rozsahu zastupoval(a) a činil(a) veškeré úkony související s:", 2);
+  drawWrappedParagraph("Aby mě zastupoval(a) v rozsahu níže uvedených úkonů, tj. činil(a) úkony související s:", 2);
   getSelectedActions().forEach((action) => drawBullet(action));
   y += 8;
 
@@ -1612,7 +1612,7 @@ async function buildTextPdf() {
   const signatureBottomSpacingMm = hasPdfSignatureLayer ? signatureStageHeightMm + 12 : 20;
 
   drawWrappedParagraph(
-    "tato plná moc není ve výše uvedeném rozsahu ničím omezena. Zplnomocnění v plném rozsahu zmocněnec přijímá.",
+    "Tato plná moc se uděluje pouze v rozsahu výše uvedených úkonů. Zplnomocnění v tomto rozsahu zmocněnec přijímá.",
     signatureBottomSpacingMm
   );
 
